@@ -1,4 +1,4 @@
-import { route, type RouteContext, type RouteInfo } from '../route'
+import { route, type RouteContext, type RouteInfo, type Op, type ResponseOf } from '../route'
 import type { RequestOptions } from '../transport'
 import type { KnowledgeUploadInput } from '../types/inputs'
 
@@ -7,7 +7,7 @@ export const knowledge = (ctx: RouteContext) => ({
     // The generated input type says `file?: string | null` because the OpenAPI spec encodes the
     // multipart binary field as `string`. Cast to a hand-written input type that types `file` as
     // `File | Blob | null` instead — the only input cast in the package.
-    upload: route(ctx, 'post', '/knowledge/content') as unknown as ((input?: KnowledgeUploadInput, options?: RequestOptions) => Promise<unknown>) & { route: RouteInfo },
+    upload: route(ctx, 'post', '/knowledge/content') as unknown as ((input?: KnowledgeUploadInput, options?: RequestOptions) => Promise<ResponseOf<Op<'/knowledge/content', 'post'>>>) & { route: RouteInfo },
     list: route(ctx, 'get', '/knowledge/content'),
     deleteMany: route(ctx, 'delete', '/knowledge/content'),
     get: route(ctx, 'get', '/knowledge/content/{content_id}'),

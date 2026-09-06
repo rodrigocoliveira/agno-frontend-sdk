@@ -46,6 +46,14 @@ describe('request: url, headers, body', () => {
     expect(header(m.calls[0]!.init, 'idempotency-key')).toBe('k1')
   })
 
+  test('body with no contentType defaults to application/json', async () => {
+    const m = mockFetch(() => json({}))
+    const t = createTransport({ baseUrl: base, fetch: m.fetch })
+    await t.request({ method: 'post', path: '/x', body: { a: 1 } })
+    expect(m.calls[0]!.init.body).toBe(JSON.stringify({ a: 1 }))
+    expect(header(m.calls[0]!.init, 'content-type')).toBe('application/json')
+  })
+
   test('204 → undefined, octet-stream → Blob when response=blob', async () => {
     const m = mockFetch((_, n) => (n === 1 ? empty() : new Response(new Uint8Array([1, 2]), { headers: { 'content-type': 'application/octet-stream' } })))
     const t = createTransport({ baseUrl: base, fetch: m.fetch })
@@ -117,12 +125,22 @@ describe('request: 401 refresh', () => {
     expect(m.calls).toHaveLength(2)
   })
 
-  test('onTokenExpired returning a string → used for the retry and later requests', async () => {
-    const m = mockFetch(({ init }) => (header(init, 'authorization') === 'Bearer fresh' ? json({}) : json({ detail: 'expired' }, 401)))
-    const t = createTransport({ baseUrl: base, fetch: m.fetch, token: 'stale', onTokenExpired: () => 'fresh' })
+  test('onTokenExpired returning a string → used for the retry, but token() still wins on later requests', async () => {
+    // token() keeps reporting the stale value even after the refresh — it wins over the
+    // override on any request after the retry, since a defined `config.token` always wins.
+    const m = mockFetch((_, n) => (n === 1 ? json({ detail: 'expired' }, 401) : json({})))
+    const t = createTransport({ baseUrl: base, fetch: m.fetch, token: () => 'stale', onTokenExpired: () => 'fresh' })
     await t.request({ method: 'get', path: '/a' })
     await t.request({ method: 'get', path: '/b' })
-    expect(m.calls.map((c) => header(c.init, 'authorization'))).toEqual(['Bearer stale', 'Bearer fresh', 'Bearer fresh'])
+    expect(m.calls.map((c) => header(c.init, 'authorization'))).toEqual(['Bearer stale', 'Bearer fresh', 'Bearer stale'])
+  })
+
+  test('onTokenExpired returning a string with no token() source → used as a fallback on later requests', async () => {
+    const m = mockFetch((_, n) => (n === 1 ? json({ detail: 'expired' }, 401) : json({})))
+    const t = createTransport({ baseUrl: base, fetch: m.fetch, onTokenExpired: () => 'fresh' })
+    await t.request({ method: 'get', path: '/a' })
+    await t.request({ method: 'get', path: '/b' })
+    expect(m.calls.map((c) => header(c.init, 'authorization'))).toEqual([null, 'Bearer fresh', 'Bearer fresh'])
   })
 
   test('second 401 after refresh → throws, no loop', async () => {

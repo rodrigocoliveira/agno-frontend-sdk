@@ -42,15 +42,23 @@ export function createTransport(config: TransportConfig): Transport {
   let override: string | undefined // token returned by onTokenExpired, wins until the next refresh
   let refreshing: Promise<string | undefined> | null = null
 
+  // A defined value from `config.token` always wins; `override` (set by `onTokenExpired`
+  // returning a string) is used only as a fallback when `token` is absent or resolves to undefined.
   async function resolveToken(): Promise<string | undefined> {
-    if (override !== undefined) return override
-    return typeof config.token === 'function' ? await config.token() : config.token
+    const fromConfig = typeof config.token === 'function' ? await config.token() : config.token
+    return fromConfig ?? override
   }
 
   function refresh(): Promise<string | undefined> {
     refreshing ??= (async () => {
       const r = await config.onTokenExpired!()
-      override = typeof r === 'string' ? r : undefined
+      if (typeof r === 'string') {
+        // Return the refreshed token directly for the retry — if `token()` still reports the
+        // stale value, resolveToken() would otherwise hand the retry that stale value back.
+        override = r
+        return r
+      }
+      override = undefined
       return resolveToken()
     })().finally(() => { refreshing = null })
     return refreshing
@@ -59,7 +67,10 @@ export function createTransport(config: TransportConfig): Transport {
   async function doFetch(req: ResolvedRequest, accept: string, token: string | undefined): Promise<Response> {
     const qs = buildQuery(req.query)
     const url = `${baseUrl}${req.path}${qs ? `?${qs}` : ''}`
-    const encoded = encodeBody(req.body, req.contentType ?? null)
+    // A caller-supplied body with no contentType defaults to JSON — matters only for
+    // api.request()/api.stream(), the escape hatch; generated routes always carry a contentType.
+    const contentType = req.contentType ?? (req.body !== undefined ? 'application/json' : null)
+    const encoded = encodeBody(req.body, contentType)
     const headers = new Headers()
     headers.set('accept', accept)
     for (const [k, v] of Object.entries(config.headers ?? {})) headers.set(k, v)

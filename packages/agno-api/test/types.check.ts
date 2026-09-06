@@ -1,6 +1,22 @@
 // Compiled by `bun run typecheck` only. Positive cases must compile; negative cases use @ts-expect-error.
-import { route, streamOnlyRoute, streamRoute, type RouteContext } from '../src/route'
-import type { AgentRunEvent, AgentRunInput, AgentStreamEvent, ResumeInput, RunOutput, RunStatus, TeamRunEvent, WorkflowRunEvent, TeamRunInput, WorkflowContinueInput } from '../src/types'
+import { route, streamOnlyRoute, streamRoute, type BodyOf, type Op, type RouteContext } from '../src/route'
+import { knowledge } from '../src/routes/knowledge'
+import type { paths } from '../src/generated/openapi'
+import type {
+  AgentContinueInput,
+  AgentRunEvent,
+  AgentRunInput,
+  AgentStreamEvent,
+  ResumeInput,
+  RunOutput,
+  RunStatus,
+  TeamContinueInput,
+  TeamRunEvent,
+  TeamRunInput,
+  WorkflowContinueInput,
+  WorkflowRunEvent,
+  WorkflowRunInput,
+} from '../src/types'
 
 declare const ev: AgentRunEvent
 if (ev.event === 'RunContent') {
@@ -97,3 +113,27 @@ resume('a', 'r')
 resume('a', 'r', { last_event_index: 3 })
 // @ts-expect-error resume needs two path params
 resume('a')
+
+// ---------- knowledge.content.upload: typed response, not `unknown` ----------
+
+const uploadResult = knowledge(rc).content.upload()
+declare const uploadUnknown: unknown
+// @ts-expect-error content.upload must return a typed response, not `unknown`
+const uploadTyped: Awaited<typeof uploadResult> = uploadUnknown
+void uploadResult; void uploadTyped
+
+// ---------- hand-written stream input types must not drift from the OpenAPI bodies ----------
+
+type Extra<I, P extends keyof paths> = Exclude<keyof I, keyof BodyOf<Op<P, 'post'>>>
+
+const _d1: never = null as unknown as Extra<AgentRunInput, '/agents/{agent_id}/runs'>
+const _d2: never = null as unknown as Extra<TeamRunInput, '/teams/{team_id}/runs'>
+const _d3: never = null as unknown as Extra<WorkflowRunInput, '/workflows/{workflow_id}/runs'>
+const _d4: never = null as unknown as Extra<AgentContinueInput, '/agents/{agent_id}/runs/{run_id}/continue'>
+const _d5: never = null as unknown as Extra<TeamContinueInput, '/teams/{team_id}/runs/{run_id}/continue'>
+const _d6: never = null as unknown as Extra<WorkflowContinueInput, '/workflows/{workflow_id}/runs/{run_id}/continue'>
+const _d7: never = null as unknown as Extra<ResumeInput, '/agents/{agent_id}/runs/{run_id}/resume'>
+void _d1; void _d2; void _d3; void _d4; void _d5; void _d6; void _d7
+// @ts-expect-error a field the wire does not have must be caught
+const _dBad: never = null as unknown as Extra<{ requirements?: unknown }, '/workflows/{workflow_id}/runs/{run_id}/continue'>
+void _dBad
