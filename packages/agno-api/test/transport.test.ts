@@ -66,6 +66,15 @@ describe('request: url, headers, body', () => {
     ctrl.abort()
     await expect(p).rejects.toMatchObject({ name: 'AbortError' })
   })
+
+  test('transport-owned headers override user-supplied variants', async () => {
+    const m = mockFetch(() => json({}))
+    const t = createTransport({ baseUrl: base, token: 'real', fetch: m.fetch, headers: { Authorization: 'Bearer user' } })
+    await t.request({ method: 'post', path: '/x', body: { a: 1 }, contentType: 'application/json', headers: { 'Content-Type': 'text/plain', 'X-Extra': '1' } })
+    expect(header(m.calls[0]!.init, 'authorization')).toBe('Bearer real')
+    expect(header(m.calls[0]!.init, 'content-type')).toBe('text/plain')
+    expect(header(m.calls[0]!.init, 'x-extra')).toBe('1')
+  })
 })
 
 describe('request: errors', () => {
@@ -159,5 +168,18 @@ describe('request: 401 refresh', () => {
     const [b1, b2] = m.calls.map((c) => c.init.body as FormData)
     expect(b1).not.toBe(b2)
     expect(b2!.get('message')).toBe('oi')
+  })
+
+  test('a synchronously throwing onTokenExpired does not poison later refreshes', async () => {
+    let attempts = 0
+    let token = 'old'
+    const m = mockFetch(({ init }) => (header(init, 'authorization') === 'Bearer new' ? json({}) : json({ detail: 'expired' }, 401)))
+    const t = createTransport({
+      baseUrl: base, fetch: m.fetch, token: () => token,
+      onTokenExpired: () => { attempts++; if (attempts === 1) throw new Error('no refresh token'); token = 'new' },
+    })
+    await expect(t.request({ method: 'get', path: '/a' })).rejects.toThrow('no refresh token')
+    expect(await t.request<Record<string, never>>({ method: 'get', path: '/b' })).toEqual({})
+    expect(attempts).toBe(2)
   })
 })

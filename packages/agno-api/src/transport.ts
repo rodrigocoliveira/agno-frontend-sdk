@@ -47,17 +47,11 @@ export function createTransport(config: TransportConfig): Transport {
   }
 
   function refresh(): Promise<string | undefined> {
-    if (!refreshing) {
-      refreshing = (async () => {
-        try {
-          const r = await config.onTokenExpired!()
-          override = typeof r === 'string' ? r : undefined
-          return await resolveToken()
-        } finally {
-          refreshing = null
-        }
-      })()
-    }
+    refreshing ??= (async () => {
+      const r = await config.onTokenExpired!()
+      override = typeof r === 'string' ? r : undefined
+      return resolveToken()
+    })().finally(() => { refreshing = null })
     return refreshing
   }
 
@@ -65,14 +59,13 @@ export function createTransport(config: TransportConfig): Transport {
     const qs = buildQuery(req.query)
     const url = `${baseUrl}${req.path}${qs ? `?${qs}` : ''}`
     const encoded = encodeBody(req.body, req.contentType ?? null)
-    const headers: Record<string, string> = {
-      accept,
-      ...config.headers,
-      ...encoded.headers,
-      ...req.headers,
-    }
-    if (token) headers.authorization = `Bearer ${token}`
-    if (req.idempotencyKey) headers['idempotency-key'] = req.idempotencyKey
+    const headers = new Headers()
+    headers.set('accept', accept)
+    for (const [k, v] of Object.entries(config.headers ?? {})) headers.set(k, v)
+    for (const [k, v] of Object.entries(encoded.headers ?? {})) headers.set(k, v)
+    for (const [k, v] of Object.entries(req.headers ?? {})) headers.set(k, v)
+    if (token) headers.set('authorization', `Bearer ${token}`)
+    if (req.idempotencyKey) headers.set('idempotency-key', req.idempotencyKey)
     try {
       return await fetchFn(url, { method: req.method.toUpperCase(), headers, body: encoded.body, signal: req.signal })
     } catch (e) {
