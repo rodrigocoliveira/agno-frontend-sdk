@@ -1,0 +1,39 @@
+{
+  "name": "@rodrigocoliveira/agno-api",
+  "version": "0.0.0",
+  "description": "Typed, stateless client for every AgentOS v3 route",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rodrigocoliveira/agno-frontend-sdk.git",
+    "directory": "packages/agno-api"
+  },
+  "homepage": "https://github.com/rodrigocoliveira/agno-frontend-sdk#readme",
+  "bugs": "https://github.com/rodrigocoliveira/agno-frontend-sdk/issues",
+  "keywords": ["agno", "agentos", "sdk", "client", "typescript", "sse"],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "generate": "bun run scripts/generate.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsup",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  },
+  "publishConfig": { "access": "public" }
+}

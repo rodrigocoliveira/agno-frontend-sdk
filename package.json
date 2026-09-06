@@ -1,0 +1,22 @@
+{
+  "name": "agno-frontend-sdk",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "examples/*"],
+  "scripts": {
+    "generate": "bun run --filter '@rodrigocoliveira/agno-api' generate",
+    "agentos": "bun run --filter agentos-example dev",
+    "typecheck": "bun run --filter './packages/*' typecheck",
+    "build": "bun run --filter './packages/*' build",
+    "test": "bun test packages",
+    "test:e2e": "AGNO_URL=${AGNO_URL:-http://localhost:7777} bun test packages/agno-api/test/e2e",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "bun run build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^3.0.2",
+    "@types/bun": "^1.4.1",
+    "typescript": "^5.9.3"
+  }
+}
