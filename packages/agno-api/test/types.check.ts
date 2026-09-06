@@ -1,5 +1,6 @@
 // Compiled by `bun run typecheck` only. Positive cases must compile; negative cases use @ts-expect-error.
-import type { AgentRunEvent, AgentStreamEvent, RunStatus, TeamRunEvent, WorkflowRunEvent, TeamRunInput, WorkflowContinueInput } from '../src/types'
+import { route, streamRoute, type RouteContext } from '../src/route'
+import type { AgentRunEvent, AgentRunInput, AgentStreamEvent, RunOutput, RunStatus, TeamRunEvent, WorkflowRunEvent, TeamRunInput, WorkflowContinueInput } from '../src/types'
 
 declare const ev: AgentRunEvent
 if (ev.event === 'RunContent') {
@@ -51,3 +52,38 @@ void wfBad
 // @ts-expect-error workflow continue has no `fork` field
 const wfBad2: WorkflowContinueInput = { fork: true }
 void wfBad2
+
+// ---------- route() / streamRoute() ----------
+
+declare const rc: RouteContext
+
+const getAgent = route(rc, 'get', '/agents/{agent_id}')
+getAgent('a')
+getAgent('a', { signal: undefined })
+// @ts-expect-error missing path param
+getAgent()
+// @ts-expect-error no input on this route
+getAgent('a', { user_id: 'u' })
+
+const listSessions = route(rc, 'get', '/sessions')
+listSessions()
+listSessions({ type: 'agent', limit: 1 })
+listSessions(undefined, { headers: {} })
+// @ts-expect-error unknown query key
+listSessions({ nope: 1 })
+
+const rename = route(rc, 'post', '/sessions/{session_id}/rename')
+rename('s', { session_name: 'x' })
+rename('s', { session_name: 'x', user_id: 'u' })
+// @ts-expect-error session_name is required
+rename('s', {})
+
+// @ts-expect-error /health has no post
+route(rc, 'post', '/health')
+
+const createRun = streamRoute<AgentRunInput, RunOutput, AgentStreamEvent>(rc, '/agents/{agent_id}/runs')
+const p: Promise<RunOutput> = createRun('a', { message: 'oi', stream: false })
+const it: AsyncGenerator<AgentStreamEvent> = createRun('a', { message: 'oi' })
+void p; void it
+// @ts-expect-error message is required
+createRun('a', {})
