@@ -46,6 +46,8 @@ api.<grupo>[.<subrecurso>].<op>(...pathParams, input?, options?)
 2. **`input`**: um único objeto plano com query e body misturados. A lib separa em runtime usando o manifesto. O tipo é `Query & Body` do OpenAPI. Rotas sem query nem body não têm esse argumento.
 3. **`options`**: `{ signal?: AbortSignal, headers?: Record<string,string>, idempotencyKey?: string }`.
 
+Rotas sem query e sem body não têm o argumento `input`: `api.agents.get(id, options?)`. Rotas com `input` opcional recebem `options` na terceira posição: `api.sessions.list(undefined, { signal })`.
+
 ```ts
 api.agents.list()
 api.agents.get(agentId)
@@ -62,7 +64,7 @@ Garantia de build: o gerador falha se alguma rota tiver a mesma chave em query e
 | Content type da rota | Como o body vai |
 |---|---|
 | `application/json` (todas as demais que têm body) | `JSON.stringify` |
-| `multipart/form-data` (`agents.runs.create`, `teams.runs.create`, `knowledge.content.upload`) | `FormData`. `File`/`Blob` entram direto; arrays viram campos repetidos; objetos viram JSON string (o servidor espera `tools`, `requirements`, `session_state`, `metadata`, `dependencies` como JSON string) |
+| `multipart/form-data` (`agents.runs.create`, `teams.runs.create`, `knowledge.content.upload`) | `FormData`. `File`/`Blob` entram direto; array de `File`/`Blob` vira campo repetido; outros arrays e objetos viram JSON string (o servidor espera `tools`, `requirements`, `factory_input`, `files_metadata`, `metadata` como JSON string) |
 | `application/x-www-form-urlencoded` (`continue`, `resume` de agents/teams, todas de workflows `runs`, `knowledge.remoteContent`, `knowledge.content.update`) | `URLSearchParams`, objetos e arrays como JSON string |
 
 Query: `undefined` é omitido, arrays viram chave repetida, booleanos viram `true`/`false`.
@@ -180,7 +182,7 @@ for await (const ev of api.agents.runs.create(agentId, { message: 'oi', session_
 const run = await api.agents.runs.create(agentId, { message: 'oi', stream: false })
 ```
 
-Overload por literal: `input.stream === false` → `Promise<RunOutput>`; qualquer outro caso → `AsyncIterable<AgentRunEvent>` (ou `TeamRunEvent`, `WorkflowRunEvent`). O `resume` devolve também os meta-eventos `catch_up`, `replay`, `subscribed`, `error` tipados na mesma união.
+Overload por literal: `input.stream === false` → `Promise<RunOutput>`; qualquer outro caso → `AsyncIterable<AgentStreamEvent>` (ou `TeamStreamEvent`, `WorkflowStreamEvent`), união dos eventos de run com os meta-eventos `catch_up`, `replay`, `subscribed`, `error` do `/resume`. O `resume` não tem campo `stream` no body e sempre devolve o iterável.
 
 Regras do iterável:
 
@@ -268,9 +270,10 @@ agno-frontend-sdk/
       scripts/generate.ts
       src/
         index.ts
-        client.ts             createAgnoApi, request(), stream(), auth + refresh
-        route.ts              route(), streamRoute()
-        transport.ts          fetch, serialização, erro
+        client.ts             createAgnoApi, árvore de grupos, request()/stream() custom
+        transport.ts          fetch, auth + refresh no 401, parse de resposta
+        serialize.ts          buildPath, buildQuery, splitInput, encodeBody
+        route.ts              route(), streamRoute(), streamOnlyRoute() e os type helpers
         sse.ts
         errors.ts
         routes/               agents.ts, teams.ts, workflows.ts, sessions.ts, ...
