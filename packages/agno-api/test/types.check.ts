@@ -1,5 +1,5 @@
 // Compiled by `bun run typecheck` only. Positive cases must compile; negative cases use @ts-expect-error.
-import type { AgentRunEvent, AgentStreamEvent, RunStatus, TeamRunEvent, WorkflowRunEvent } from '../src/types'
+import type { AgentRunEvent, AgentStreamEvent, RunStatus, TeamRunEvent, WorkflowRunEvent, TeamRunInput, WorkflowContinueInput } from '../src/types'
 
 declare const ev: AgentRunEvent
 if (ev.event === 'RunContent') {
@@ -39,3 +39,15 @@ void st
 // @ts-expect-error status is upper-case on the wire
 const st2: RunStatus = 'paused'
 void st2
+
+const teamRun: TeamRunInput = { message: 'hi', monitor: false }
+void teamRun
+
+const wfContinue: WorkflowContinueInput = { step_requirements: [], stream: false }
+void wfContinue
+// @ts-expect-error workflow continue has no `requirements` field
+const wfBad: WorkflowContinueInput = { requirements: [] }
+void wfBad
+// @ts-expect-error workflow continue has no `fork` field
+const wfBad2: WorkflowContinueInput = { fork: true }
+void wfBad2

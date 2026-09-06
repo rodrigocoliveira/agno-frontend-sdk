@@ -16,7 +16,11 @@ export interface AgentRunInput extends RunInputBase {
   /** Sent as a JSON string when an object is given. */
   files_metadata?: string | Record<string, unknown> | null
 }
-export type TeamRunInput = AgentRunInput
+
+export interface TeamRunInput extends AgentRunInput {
+  monitor?: boolean
+}
+
 export type WorkflowRunInput = RunInputBase
 
 interface ContinueInputBase {
@@ -37,11 +41,21 @@ export interface AgentContinueInput extends ContinueInputBase {
   tools?: ToolExecution[]
 }
 
-/** Team and workflow: decisions travel inside `requirements[].tool_execution` (matched by `id`). Sent as a JSON string. */
+/** Team: decisions travel inside `requirements[].tool_execution` (matched by `id`). Sent as a JSON string. */
 export interface TeamContinueInput extends ContinueInputBase {
   requirements?: RunRequirement[]
 }
-export type WorkflowContinueInput = TeamContinueInput
+
+/** Workflow: decisions travel inside `step_requirements[].tool_execution`. Sent as a JSON string. No fork/regenerate fields on this route. */
+export interface WorkflowContinueInput {
+  step_requirements?: RunRequirement[]
+  session_id?: string | null
+  user_id?: string | null
+  stream?: boolean
+  background?: boolean
+  /** Sent as a JSON string when an object is given. */
+  factory_input?: string | Record<string, unknown> | null
+}
 
 export interface ResumeInput {
   last_event_index?: number | null
