@@ -32,7 +32,7 @@ const api = createAgnoApi({
 
 - `token` é lido **a cada request** (nunca cacheado pela lib), enviado como `Authorization: Bearer <token>`.
 - `params` globais entram em toda rota cuja query aceite aquela chave (conferido pelo manifesto, seção 4). Valor passado na chamada vence o global.
-- `headers` fixos entram em toda request; `Content-Type` e `Authorization` são controlados pela lib.
+- `headers` fixos entram em toda request; `headers` por chamada podem sobrescrever `Content-Type`; só `Authorization` e `Idempotency-Key` são controlados pela lib.
 
 ### 2.1 Regra única de assinatura
 
@@ -52,7 +52,7 @@ Rotas sem query e sem body não têm o argumento `input`: `api.agents.get(id, op
 api.agents.list()
 api.agents.get(agentId)
 api.sessions.list({ user_id, type: 'agent', limit: 20 })
-api.sessions.rename(sessionId, { name: 'Novo nome', user_id })
+api.sessions.rename(sessionId, { session_name: 'Novo nome', user_id })
 api.agents.runs.cancel(agentId, runId)
 api.knowledge.content.upload({ file, name, reader_id }, { signal })
 ```
@@ -183,6 +183,8 @@ const run = await api.agents.runs.create(agentId, { message: 'oi', stream: false
 ```
 
 Overload por literal: `input.stream === false` → `Promise<RunOutput>`; qualquer outro caso → `AsyncIterable<AgentStreamEvent>` (ou `TeamStreamEvent`, `WorkflowStreamEvent`), união dos eventos de run com os meta-eventos `catch_up`, `replay`, `subscribed`, `error` do `/resume`. O `resume` não tem campo `stream` no body e sempre devolve o iterável.
+
+`workflows.runs.continue` recebe `step_requirements` (não `requirements`) e não tem `input`/`continue_from`/`fork`/`regenerate`; `teams.runs.continue` recebe `requirements`; `agents.runs.continue` recebe `tools`.
 
 Regras do iterável:
 
