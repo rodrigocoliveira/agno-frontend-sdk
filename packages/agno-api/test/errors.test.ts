@@ -60,6 +60,18 @@ describe('errorFromResponse', () => {
     expect(e.body).toEqual({ foo: 'bar' })
   })
 
+  test('JSON object with only `message` falls back to it as detail', async () => {
+    const e = await errorFromResponse(res({ message: 'Session expired' }, 403), 'GET', '/x')
+    expect(e.detail).toBe('Session expired')
+    expect(e.message).toBe('Session expired')
+  })
+
+  test('`detail` wins over `message`', async () => {
+    const e = await errorFromResponse(res({ detail: 'Forbidden', message: 'Session expired' }, 403), 'GET', '/x')
+    expect(e.detail).toBe('Forbidden')
+    expect(e.message).toBe('Forbidden')
+  })
+
   test('JSON array body is not treated as an error object', async () => {
     const e = await errorFromResponse(res([1, 2], 500), 'GET', '/x')
     expect(e.validation).toBeUndefined()

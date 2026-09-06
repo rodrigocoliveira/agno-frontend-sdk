@@ -38,8 +38,9 @@ export function splitInput(
   const body: Record<string, unknown> = {}
   for (const k of meta.query) if (globals[k] !== undefined) query[k] = globals[k]
   for (const [k, v] of Object.entries(input ?? {})) {
+    if (v === undefined) continue
     if (meta.query.includes(k)) {
-      if (v !== undefined) query[k] = v
+      query[k] = v
     } else if (meta.contentType) {
       body[k] = v
     } else {
@@ -69,8 +70,19 @@ export function encodeBody(
     const fd = new FormData()
     for (const [k, v] of Object.entries(body)) {
       if (v === undefined || v === null) continue
-      if (Array.isArray(v) && v.length > 0 && v.every(isBlob)) for (const b of v) fd.append(k, b)
-      else fd.append(k, formValue(v))
+      if (Array.isArray(v)) {
+        // An empty array carries no field at all: serialising it as the string "[]" would make the
+        // server see a value where the caller meant "nothing".
+        if (v.length === 0) continue
+        const files = v.filter(isBlob)
+        if (files.length === v.length) {
+          for (const b of files) fd.append(k, b)
+          continue
+        }
+        // A mixed array would silently serialise each Blob as "{}" — refuse it instead.
+        if (files.length > 0) throw new TypeError(`"${k}": an array of files must contain only File/Blob values`)
+      }
+      fd.append(k, formValue(v))
     }
     return { body: fd, headers: {} } // fetch sets the multipart boundary
   }

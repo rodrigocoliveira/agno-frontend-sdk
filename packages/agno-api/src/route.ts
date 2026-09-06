@@ -37,8 +37,16 @@ type ContentOf<R> = R extends { content?: infer C }
     : NonNullable<C> extends { 'application/json': infer J } ? J : NonNullable<C>[keyof NonNullable<C>]
   : undefined
 
+// The first 2xx the operation declares wins — some routes answer only 202 (accepted for
+// processing) or 204 (no content), and those must not degrade to `undefined`/`unknown`.
 export type ResponseOf<O> = O extends { responses: infer R }
-  ? 200 extends keyof R ? ContentOf<R[200]> : 201 extends keyof R ? ContentOf<R[201]> : undefined
+  ? 200 extends keyof R ? ContentOf<R[200]>
+  : 201 extends keyof R ? ContentOf<R[201]>
+  : 202 extends keyof R ? ContentOf<R[202]>
+  : 203 extends keyof R ? ContentOf<R[203]>
+  : 204 extends keyof R ? ContentOf<R[204]>
+  : 206 extends keyof R ? ContentOf<R[206]>
+  : undefined
   : unknown
 
 export type InputOf<O> = QueryOf<O> & BodyOf<O>
@@ -91,7 +99,10 @@ export function route<M extends Method, P extends PathsFor<M>, R = ResponseOf<Op
 
 export type StreamRouteFn<P extends string, I, R, E> = {
   (...args: [...PathArgs<P>, input: I & { stream: false }, options?: RequestOptions]): Promise<R>
-  (...args: [...PathArgs<P>, input: I, options?: RequestOptions]): AsyncGenerator<E>
+  // `stream?: true` means absent or literally `true` — a widened `boolean` must not match here,
+  // or a `stream: someBoolean` call would be typed as a generator while returning a Promise.
+  (...args: [...PathArgs<P>, input: I & { stream?: true }, options?: RequestOptions]): AsyncGenerator<E>
+  (...args: [...PathArgs<P>, input: I, options?: RequestOptions]): Promise<R> | AsyncGenerator<E>
 } & { route: RouteInfo }
 
 export const streamRoute =

@@ -135,12 +135,26 @@ describe('request: 401 refresh', () => {
     expect(m.calls.map((c) => header(c.init, 'authorization'))).toEqual(['Bearer stale', 'Bearer fresh', 'Bearer stale'])
   })
 
-  test('onTokenExpired returning a string with no token() source → used as a fallback on later requests', async () => {
+  test('onTokenExpired returning a string with no token() source → used for the retry only', async () => {
     const m = mockFetch((_, n) => (n === 1 ? json({ detail: 'expired' }, 401) : json({})))
     const t = createTransport({ baseUrl: base, fetch: m.fetch, onTokenExpired: () => 'fresh' })
     await t.request({ method: 'get', path: '/a' })
     await t.request({ method: 'get', path: '/b' })
-    expect(m.calls.map((c) => header(c.init, 'authorization'))).toEqual([null, 'Bearer fresh', 'Bearer fresh'])
+    expect(m.calls.map((c) => header(c.init, 'authorization'))).toEqual([null, 'Bearer fresh', null])
+  })
+
+  test('a throwing onTokenExpired surfaces the original 401 as AgnoApiError with the refresh error as cause', async () => {
+    const boom = new Error('no refresh token')
+    const m = mockFetch(() => json({ detail: 'expired' }, 401))
+    const t = createTransport({ baseUrl: base, fetch: m.fetch, token: 't', onTokenExpired: () => { throw boom } })
+    const e = await t.request({ method: 'get', path: '/health' }).catch((x) => x) as AgnoApiError
+    expect(e).toBeInstanceOf(AgnoApiError)
+    expect(e.status).toBe(401)
+    expect(e.detail).toBe('expired')
+    expect(e.method).toBe('GET')
+    expect(e.path).toBe('/health')
+    expect(e.cause).toBe(boom)
+    expect(m.calls).toHaveLength(1)
   })
 
   test('second 401 after refresh → throws, no loop', async () => {
@@ -196,7 +210,9 @@ describe('request: 401 refresh', () => {
       baseUrl: base, fetch: m.fetch, token: () => token,
       onTokenExpired: () => { attempts++; if (attempts === 1) throw new Error('no refresh token'); token = 'new' },
     })
-    await expect(t.request({ method: 'get', path: '/a' })).rejects.toThrow('no refresh token')
+    const e = await t.request({ method: 'get', path: '/a' }).catch((x) => x) as AgnoApiError
+    expect(e.status).toBe(401)
+    expect((e.cause as Error).message).toBe('no refresh token')
     expect(await t.request<Record<string, never>>({ method: 'get', path: '/b' })).toEqual({})
     expect(attempts).toBe(2)
   })

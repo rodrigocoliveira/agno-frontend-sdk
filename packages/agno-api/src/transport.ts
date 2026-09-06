@@ -39,27 +39,20 @@ const isAbort = (e: unknown) => e instanceof Error && e.name === 'AbortError'
 export function createTransport(config: TransportConfig): Transport {
   const baseUrl = config.baseUrl.replace(/\/+$/, '')
   const fetchFn = config.fetch ?? globalThis.fetch
-  let override: string | undefined // token returned by onTokenExpired, wins until the next refresh
   let refreshing: Promise<string | undefined> | null = null
 
-  // A defined value from `config.token` always wins; `override` (set by `onTokenExpired`
-  // returning a string) is used only as a fallback when `token` is absent or resolves to undefined.
+  // `config.token` is the single source of truth and is read on every request; a token returned
+  // by `onTokenExpired` is never remembered, so it cannot outlive a logout that clears `token`.
   async function resolveToken(): Promise<string | undefined> {
-    const fromConfig = typeof config.token === 'function' ? await config.token() : config.token
-    return fromConfig ?? override
+    return typeof config.token === 'function' ? await config.token() : config.token
   }
 
   function refresh(): Promise<string | undefined> {
     refreshing ??= (async () => {
       const r = await config.onTokenExpired!()
-      if (typeof r === 'string') {
-        // Return the refreshed token directly for the retry — if `token()` still reports the
-        // stale value, resolveToken() would otherwise hand the retry that stale value back.
-        override = r
-        return r
-      }
-      override = undefined
-      return resolveToken()
+      // A returned string is used for the immediate retry only — if `token()` still reports the
+      // stale value, resolveToken() would otherwise hand the retry that stale value back.
+      return typeof r === 'string' ? r : await resolveToken()
     })().finally(() => { refreshing = null })
     return refreshing
   }
@@ -91,9 +84,19 @@ export function createTransport(config: TransportConfig): Transport {
     const used = await resolveToken()
     let res = await doFetch(req, accept, used)
     if (res.status === 401 && config.onTokenExpired) {
-      await res.body?.cancel().catch(() => {})
+      // Build the 401's error eagerly (this also drains the body): if the refresh itself blows up,
+      // the caller must still see the original 401 rather than the refresh's own failure.
+      const unauthorized = await errorFromResponse(res, req.method.toUpperCase(), req.path)
       const current = await resolveToken()
-      const next = current !== used ? current : await refresh()
+      let next: string | undefined
+      if (current !== used) next = current
+      else {
+        try {
+          next = await refresh()
+        } catch (cause) {
+          throw Object.assign(unauthorized, { cause })
+        }
+      }
       res = await doFetch(req, accept, next)
     }
     if (!res.ok) throw await errorFromResponse(res, req.method.toUpperCase(), req.path)

@@ -1,7 +1,8 @@
 // Compiled by `bun run typecheck` only. Positive cases must compile; negative cases use @ts-expect-error.
+import { createAgnoApi } from '../src/client'
 import { route, streamOnlyRoute, streamRoute, type BodyOf, type Op, type RouteContext } from '../src/route'
 import { knowledge } from '../src/routes/knowledge'
-import type { paths } from '../src/generated/openapi'
+import type { components, paths } from '../src/generated/openapi'
 import type {
   AgentContinueInput,
   AgentRunEvent,
@@ -108,6 +109,14 @@ createRun({ message: 'oi' })
 // @ts-expect-error too many path params on a stream route
 createRun('a', 'b', { message: 'oi' })
 
+// a widened `stream: boolean` cannot pick either literal overload: the call returns the union
+declare const flag: boolean
+const u: Promise<RunOutput> | AsyncGenerator<AgentStreamEvent> = createRun('a', { message: 'x', stream: flag })
+void u
+// @ts-expect-error a widened `stream: boolean` must not narrow to the streaming overload
+const uBad: AsyncGenerator<AgentStreamEvent> = createRun('a', { message: 'x', stream: flag })
+void uBad
+
 const resume = streamOnlyRoute<ResumeInput, AgentStreamEvent>()(rc, '/agents/{agent_id}/runs/{run_id}/resume')
 resume('a', 'r')
 resume('a', 'r', { last_event_index: 3 })
@@ -121,6 +130,14 @@ declare const uploadUnknown: unknown
 // @ts-expect-error content.upload must return a typed response, not `unknown`
 const uploadTyped: Awaited<typeof uploadResult> = uploadUnknown
 void uploadResult; void uploadTyped
+
+// the only success status on this operation is 202 — `ResponseOf` must pick it up
+declare const api: ReturnType<typeof createAgnoApi>
+type Uploaded = Awaited<ReturnType<typeof api.knowledge.content.upload>>
+declare const uploaded: Uploaded
+const uploadedId: string = uploaded.id
+const uploadedSchema: components['schemas']['ContentResponseSchema'] = uploaded
+void uploadedId; void uploadedSchema
 
 // ---------- hand-written stream input types must not drift from the OpenAPI bodies ----------
 

@@ -47,6 +47,12 @@ describe('splitInput', () => {
   test('throws on a body key for a route without body', () => {
     expect(() => splitInput({ nope: 1 }, { query: [], contentType: null }, {})).toThrow(/unknown input key "nope"/)
   })
+  test('an undefined value for an unknown key is skipped on a bodyless route', () => {
+    expect(splitInput({ user_id: 'u', limit: undefined }, { query: ['user_id'], contentType: null }, {})).toEqual({
+      query: { user_id: 'u' },
+      body: undefined,
+    })
+  })
 })
 
 describe('encodeBody', () => {
@@ -84,5 +90,21 @@ describe('encodeBody', () => {
     expect(fd.get('factory_input')).toBe('{"k":1}')
     expect(fd.get('stream')).toBe('true')
     expect(r.headers).toEqual({})
+  })
+  test('multipart: an empty array is omitted entirely', () => {
+    const r = encodeBody({ message: 'oi', files: [] }, 'multipart/form-data')
+    const fd = r.body as FormData
+    expect(fd.has('files')).toBe(false)
+    expect(fd.get('message')).toBe('oi')
+  })
+  test('multipart: an array mixing files and non-files throws', () => {
+    const f1 = new File(['a'], 'a.txt', { type: 'text/plain' })
+    expect(() => encodeBody({ files: [f1, 'x'] }, 'multipart/form-data')).toThrow(
+      /"files": an array of files must contain only File\/Blob values/,
+    )
+  })
+  test('multipart: an array with no files keeps the JSON-string behaviour', () => {
+    const r = encodeBody({ tags: ['a', 'b'] }, 'multipart/form-data')
+    expect((r.body as FormData).get('tags')).toBe('["a","b"]')
   })
 })

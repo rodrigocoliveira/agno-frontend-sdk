@@ -69,7 +69,8 @@ export async function errorFromResponse(res: Response, method: string, path: str
     }
   }
   const obj = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : undefined
-  const detail = obj ? obj.detail : text
+  // Some AgentOS errors carry the human-readable reason under `message` instead of `detail`.
+  const detail = obj ? (obj.detail ?? (typeof obj.message === 'string' ? obj.message : undefined)) : text
   const isNonJsonText = obj === undefined
   return new AgnoApiError({
     status: res.status,
