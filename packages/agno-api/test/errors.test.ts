@@ -52,4 +52,18 @@ describe('errorFromResponse', () => {
     expect(isAgnoApiError(networkError('GET', '/x', new Error('boom')))).toBe(true)
     expect(isAgnoApiError(new Error('x'))).toBe(false)
   })
+
+  test('JSON object without detail → undefined detail and generic message', async () => {
+    const e = await errorFromResponse(res({ foo: 'bar' }, 500), 'GET', '/x')
+    expect(e.detail).toBeUndefined()
+    expect(e.message).toBe('GET /x failed with 500')
+    expect(e.body).toEqual({ foo: 'bar' })
+  })
+
+  test('JSON array body is not treated as an error object', async () => {
+    const e = await errorFromResponse(res([1, 2], 500), 'GET', '/x')
+    expect(e.validation).toBeUndefined()
+    expect(e.message).toBe('GET /x failed with 500')
+    expect(e.body).toEqual([1, 2])
+  })
 })

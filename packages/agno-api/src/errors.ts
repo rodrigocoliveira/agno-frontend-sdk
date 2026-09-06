@@ -68,8 +68,8 @@ export async function errorFromResponse(res: Response, method: string, path: str
       body = text
     }
   }
-  const obj = body && typeof body === 'object' ? (body as Record<string, unknown>) : undefined
-  const detail = obj && 'detail' in obj ? obj.detail : text
+  const obj = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : undefined
+  const detail = obj ? obj.detail : text
   const isNonJsonText = obj === undefined
   return new AgnoApiError({
     status: res.status,
