@@ -23,6 +23,13 @@ describe('parseSSEBuffer', () => {
     expect(parseSSEBuffer('event: ping\n\n', (d) => frames.push(d))).toBe('')
     expect(frames).toEqual([])
   })
+  test('CRLF split across chunks still joins multi-line data', () => {
+    const frames: string[] = []
+    let rest = parseSSEBuffer('data: a\r', (d) => frames.push(d))
+    rest = parseSSEBuffer(rest + '\ndata: b\r\n\r\n', (d) => frames.push(d))
+    expect(frames).toEqual(['a\nb'])
+    expect(rest).toBe('')
+  })
 })
 
 describe('iterateSSE', () => {
@@ -45,6 +52,21 @@ describe('iterateSSE', () => {
     const e = await it.next().catch((x) => x)
     expect(e).toBeInstanceOf(AgnoApiError)
     expect(e.status).toBe(0)
+  })
+  test('breaking out of the loop cancels the underlying stream', async () => {
+    let cancelled = false
+    const enc = new TextEncoder()
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(enc.encode('data: {"event":"RunStarted"}\n\ndata: {"event":"RunContent"}\n\n'))
+      },
+      cancel() { cancelled = true },
+    })
+    for await (const e of iterateSSE<any>(body, { method: 'POST', path: '/x' })) {
+      if (e.event === 'RunStarted') break
+    }
+    expect(cancelled).toBe(true)
+    expect(body.locked).toBe(false)
   })
 })
 
