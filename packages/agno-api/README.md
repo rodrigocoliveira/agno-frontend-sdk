@@ -55,6 +55,21 @@ api.sessions.list(undefined, { signal })            // input is all-optional →
 api.agents.runs.cancel('agent_1', 'run_1', { session_id: 's' })
 ```
 
+## Files and form bodies
+
+`agents.runs.create`, `teams.runs.create` and `knowledge.content.upload` send `multipart/form-data`; `continue`, `resume` and `knowledge.remoteContent.create` send `application/x-www-form-urlencoded`. You pass plain objects either way and the client serializes them:
+
+- `File` / `Blob` values are sent as-is.
+- An array of `File` / `Blob` becomes a repeated field (`files=<a>&files=<b>`).
+- Any other array or object (`tools`, `requirements`, `step_requirements`, `factory_input`, `files_metadata`, `metadata`) is sent as a JSON string, which is what the server expects.
+- `null` and `undefined` are omitted; booleans become `"true"` / `"false"`.
+
+```ts
+await api.knowledge.content.upload({ file, name: 'handbook.pdf', metadata: { team: 'ops' } })
+
+for await (const ev of api.agents.runs.create(agentId, { message: 'Summarize these', files: [pdf, csv] })) { /* ... */ }
+```
+
 ## Streaming
 
 `runs.create`, `runs.continue` and `runs.resume` on `agents`, `teams` and `workflows` stream Server-Sent Events by default:
@@ -170,7 +185,7 @@ The types in `src/generated/` are derived from the AgentOS OpenAPI spec, version
 
 ## Groups
 
-`runs` is a sub-resource with the same operation set on `agents`, `teams` and `workflows`.
+`runs` is a sub-resource on `agents`, `teams` and `workflows`; agents and teams also expose `checkpoints` / `checkpoint`, workflows do not (see the table).
 
 | Group | Operations |
 |---|---|
