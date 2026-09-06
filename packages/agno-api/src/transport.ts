@@ -1,6 +1,7 @@
 import type { ContentType } from './generated/routes.gen'
 import { errorFromResponse, networkError } from './errors'
 import { buildQuery, encodeBody } from './serialize'
+import { iterateSSE } from './sse'
 
 export type Method = 'get' | 'post' | 'put' | 'patch' | 'delete'
 export type TokenSource = string | (() => string | undefined | Promise<string | undefined>)
@@ -30,7 +31,7 @@ export interface ResolvedRequest extends RequestOptions {
 
 export interface Transport {
   request<T>(req: ResolvedRequest): Promise<T>
-  stream<E>(req: ResolvedRequest): AsyncIterable<E>
+  stream<E>(req: ResolvedRequest): AsyncGenerator<E>
 }
 
 const isAbort = (e: unknown) => e instanceof Error && e.name === 'AbortError'
@@ -102,8 +103,10 @@ export function createTransport(config: TransportConfig): Transport {
       const res = await send(req, 'application/json')
       return parse<T>(res, req.response ?? 'json')
     },
-    stream<E>(_req: ResolvedRequest): AsyncIterable<E> {
-      throw new Error('not implemented')
+    async *stream<E>(req: ResolvedRequest): AsyncGenerator<E> {
+      const res = await send(req, 'text/event-stream')
+      if (!res.body) throw networkError(req.method.toUpperCase(), req.path, new Error('empty stream body'))
+      yield* iterateSSE<E>(res.body, { method: req.method.toUpperCase(), path: req.path })
     },
   }
 }
