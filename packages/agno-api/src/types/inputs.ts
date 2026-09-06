@@ -1,6 +1,6 @@
 import type { RunRequirement, ToolExecution } from './hitl'
 
-interface RunInputBase {
+export interface RunInputBase {
   message: string
   stream?: boolean
   background?: boolean
