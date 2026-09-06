@@ -94,27 +94,31 @@ export type StreamRouteFn<P extends string, I, R, E> = {
   (...args: [...PathArgs<P>, input: I, options?: RequestOptions]): AsyncGenerator<E>
 } & { route: RouteInfo }
 
-export function streamRoute<I extends { stream?: boolean }, R, E>(ctx: RouteContext, path: PathsFor<'post'>): StreamRouteFn<typeof path, I, R, E> {
-  const { m, nPath } = meta('post', path)
-  const fn = (...args: unknown[]) => {
-    const { pathArgs, input, options } = parseArgs(args, nPath, true)
-    const { query, body } = splitInput(input, m, ctx.params)
-    const req = { method: 'post' as const, path: buildPath(path, pathArgs), query, body, contentType: m.contentType, ...options }
-    return input?.stream === false ? ctx.transport.request<R>(req) : ctx.transport.stream<E>(req)
+export const streamRoute =
+  <I extends { stream?: boolean }, R, E>() =>
+  <P extends PathsFor<'post'>>(ctx: RouteContext, path: P): StreamRouteFn<P, I, R, E> => {
+    const { m, nPath } = meta('post', path)
+    const fn = (...args: unknown[]) => {
+      const { pathArgs, input, options } = parseArgs(args, nPath, true)
+      const { query, body } = splitInput(input, m, ctx.params)
+      const req = { method: 'post' as const, path: buildPath(path, pathArgs), query, body, contentType: m.contentType, ...options }
+      return input?.stream === false ? ctx.transport.request<R>(req) : ctx.transport.stream<E>(req)
+    }
+    return Object.assign(fn, { route: { method: 'post' as const, path } }) as unknown as StreamRouteFn<P, I, R, E>
   }
-  return Object.assign(fn, { route: { method: 'post' as const, path } }) as unknown as StreamRouteFn<typeof path, I, R, E>
-}
 
 export type StreamOnlyRouteFn<P extends string, I, E> = ((
   ...args: [...PathArgs<P>, input?: I, options?: RequestOptions]
 ) => AsyncGenerator<E>) & { route: RouteInfo }
 
-export function streamOnlyRoute<I, E>(ctx: RouteContext, path: PathsFor<'post'>): StreamOnlyRouteFn<typeof path, I, E> {
-  const { m, nPath } = meta('post', path)
-  const fn = (...args: unknown[]) => {
-    const { pathArgs, input, options } = parseArgs(args, nPath, true)
-    const { query, body } = splitInput(input, m, ctx.params)
-    return ctx.transport.stream<E>({ method: 'post', path: buildPath(path, pathArgs), query, body, contentType: m.contentType, ...options })
+export const streamOnlyRoute =
+  <I, E>() =>
+  <P extends PathsFor<'post'>>(ctx: RouteContext, path: P): StreamOnlyRouteFn<P, I, E> => {
+    const { m, nPath } = meta('post', path)
+    const fn = (...args: unknown[]) => {
+      const { pathArgs, input, options } = parseArgs(args, nPath, true)
+      const { query, body } = splitInput(input, m, ctx.params)
+      return ctx.transport.stream<E>({ method: 'post', path: buildPath(path, pathArgs), query, body, contentType: m.contentType, ...options })
+    }
+    return Object.assign(fn, { route: { method: 'post' as const, path } }) as unknown as StreamOnlyRouteFn<P, I, E>
   }
-  return Object.assign(fn, { route: { method: 'post' as const, path } }) as unknown as StreamOnlyRouteFn<typeof path, I, E>
-}

@@ -1,6 +1,6 @@
 // Compiled by `bun run typecheck` only. Positive cases must compile; negative cases use @ts-expect-error.
-import { route, streamRoute, type RouteContext } from '../src/route'
-import type { AgentRunEvent, AgentRunInput, AgentStreamEvent, RunOutput, RunStatus, TeamRunEvent, WorkflowRunEvent, TeamRunInput, WorkflowContinueInput } from '../src/types'
+import { route, streamOnlyRoute, streamRoute, type RouteContext } from '../src/route'
+import type { AgentRunEvent, AgentRunInput, AgentStreamEvent, ResumeInput, RunOutput, RunStatus, TeamRunEvent, WorkflowRunEvent, TeamRunInput, WorkflowContinueInput } from '../src/types'
 
 declare const ev: AgentRunEvent
 if (ev.event === 'RunContent') {
@@ -81,9 +81,19 @@ rename('s', {})
 // @ts-expect-error /health has no post
 route(rc, 'post', '/health')
 
-const createRun = streamRoute<AgentRunInput, RunOutput, AgentStreamEvent>(rc, '/agents/{agent_id}/runs')
+const createRun = streamRoute<AgentRunInput, RunOutput, AgentStreamEvent>()(rc, '/agents/{agent_id}/runs')
 const p: Promise<RunOutput> = createRun('a', { message: 'oi', stream: false })
 const it: AsyncGenerator<AgentStreamEvent> = createRun('a', { message: 'oi' })
 void p; void it
 // @ts-expect-error message is required
 createRun('a', {})
+// @ts-expect-error missing path param on a stream route
+createRun({ message: 'oi' })
+// @ts-expect-error too many path params on a stream route
+createRun('a', 'b', { message: 'oi' })
+
+const resume = streamOnlyRoute<ResumeInput, AgentStreamEvent>()(rc, '/agents/{agent_id}/runs/{run_id}/resume')
+resume('a', 'r')
+resume('a', 'r', { last_event_index: 3 })
+// @ts-expect-error resume needs two path params
+resume('a')

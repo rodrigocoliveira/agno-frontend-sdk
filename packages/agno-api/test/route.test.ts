@@ -60,7 +60,7 @@ describe('route()', () => {
 describe('streamRoute()', () => {
   test('default streams via transport.stream with form body', async () => {
     const { ctx: c, calls } = ctx()
-    const create = streamRoute<{ message: string; stream?: boolean }, { run_id: string }, { event: string }>(c, '/agents/{agent_id}/runs')
+    const create = streamRoute<{ message: string; stream?: boolean }, { run_id: string }, { event: string }>()(c, '/agents/{agent_id}/runs')
     const events = []
     for await (const e of create('a1', { message: 'oi' })) events.push(e)
     expect(events).toEqual([{ event: 'RunStarted' }])
@@ -70,7 +70,7 @@ describe('streamRoute()', () => {
 
   test('stream: false goes through transport.request', async () => {
     const { ctx: c, calls } = ctx()
-    const create = streamRoute<{ message: string; stream?: boolean }, { ok: boolean }, never>(c, '/agents/{agent_id}/runs')
+    const create = streamRoute<{ message: string; stream?: boolean }, { ok: boolean }, never>()(c, '/agents/{agent_id}/runs')
     const out = await create('a1', { message: 'oi', stream: false })
     expect(out).toEqual({ ok: true })
     expect(calls[0]!.kind).toBe('request')
@@ -79,9 +79,15 @@ describe('streamRoute()', () => {
 
   test('streamOnlyRoute always streams, input optional', async () => {
     const { ctx: c, calls } = ctx()
-    const resume = streamOnlyRoute<{ last_event_index?: number }, { event: string }>(c, '/agents/{agent_id}/runs/{run_id}/resume')
+    const resume = streamOnlyRoute<{ last_event_index?: number }, { event: string }>()(c, '/agents/{agent_id}/runs/{run_id}/resume')
     for await (const _ of resume('a', 'r')) { /* drain */ }
     expect(calls[0]!.kind).toBe('stream')
     expect(calls[0]!.req.path).toBe('/agents/a/runs/r/resume')
+  })
+
+  test('stream helpers expose route info', () => {
+    const { ctx: c } = ctx()
+    expect(streamRoute<{ stream?: boolean }, unknown, unknown>()(c, '/agents/{agent_id}/runs').route).toEqual({ method: 'post', path: '/agents/{agent_id}/runs' })
+    expect(streamOnlyRoute<unknown, unknown>()(c, '/agents/{agent_id}/runs/{run_id}/resume').route).toEqual({ method: 'post', path: '/agents/{agent_id}/runs/{run_id}/resume' })
   })
 })
