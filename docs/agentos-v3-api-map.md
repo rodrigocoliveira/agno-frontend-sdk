@@ -3098,6 +3098,7 @@ Pendente = `requires_confirmation && confirmed == null` ou `requires_user_input 
 
 | campo | tipo (Python) |
 |---|---|
+| `id` | `str` (uuid4 gerado no `__init__`, presente em `to_dict`/`from_dict`) |
 | `tool_execution` | `Optional[agno.models.response.ToolExecution]` |
 | `created_at` | `<class 'datetime.datetime'>` |
 | `confirmation` | `Optional[bool]` |
