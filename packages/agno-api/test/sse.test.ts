@@ -30,6 +30,26 @@ describe('parseSSEBuffer', () => {
     expect(frames).toEqual(['a\nb'])
     expect(rest).toBe('')
   })
+  test('the final flush does not hold back a trailing CR', () => {
+    const frames: string[] = []
+    const rest = parseSSEBuffer('data: a\r\rdata: b\r', (d) => frames.push(d))
+    expect(frames).toEqual(['a'])
+    expect(parseSSEBuffer(rest + '\r', (d) => frames.push(d), { final: true })).toBe('')
+    expect(frames).toEqual(['a', 'b'])
+  })
+  test('scanFrom does not miss a frame boundary straddling the hint', () => {
+    const frames: string[] = []
+    const rest = parseSSEBuffer('data: a\r\n\r', (d) => frames.push(d))
+    expect(parseSSEBuffer(rest + '\n', (d) => frames.push(d), { scanFrom: rest.length - 1 })).toBe('')
+    expect(frames).toEqual(['a'])
+  })
+  test('scanFrom leaves the already-scanned head alone', () => {
+    const frames: string[] = []
+    const rest = parseSSEBuffer('data: a\n\ndata: b', (d) => frames.push(d))
+    expect(rest).toBe('data: b')
+    expect(parseSSEBuffer(rest + '\n\n', (d) => frames.push(d), { scanFrom: rest.length - 1 })).toBe('')
+    expect(frames).toEqual(['a', 'b'])
+  })
 })
 
 describe('iterateSSE', () => {
@@ -38,6 +58,18 @@ describe('iterateSSE', () => {
     const events = await collect(iterateSSE<any>(res.body!, { method: 'POST', path: '/x' }))
     expect(events.map((e) => e.event)).toEqual(['RunStarted', 'RunContent'])
   })
+  test('a frame split across three chunks parses once, earlier frames are not re-emitted', async () => {
+    const res = sse(['data: {"event":"A"}\n\ndata: {"eve', 'nt":"B","x":', '1}\n\ndata: {"event":"C"}\n\n'])
+    const events = await collect(iterateSSE<any>(res.body!, { method: 'POST', path: '/x' }))
+    expect(events).toEqual([{ event: 'A' }, { event: 'B', x: 1 }, { event: 'C' }])
+  })
+
+  test('a last frame terminated by a bare CR is still delivered on the final flush', async () => {
+    const res = sse(['data: {"event":"RunCompleted"}\r\r'])
+    const events = await collect(iterateSSE<any>(res.body!, { method: 'POST', path: '/x' }))
+    expect(events).toEqual([{ event: 'RunCompleted' }])
+  })
+
   test('skips malformed JSON frames', async () => {
     const res = sse(['data: {oops\n\ndata: {"event":"RunCompleted"}\n\n'])
     const events = await collect(iterateSSE<any>(res.body!, { method: 'POST', path: '/x' }))
