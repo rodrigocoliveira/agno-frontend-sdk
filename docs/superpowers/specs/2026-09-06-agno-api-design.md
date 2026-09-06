@@ -200,7 +200,7 @@ Parser SSE: portado de `agno-client/packages/core/src/parsers/sse-parser.ts`. Pa
 
 Em `src/types/`, com base na seção "Contrato de wire" do `api-map.md`:
 
-- `events.ts`: `AgentRunEvent` (35 variantes), `TeamRunEvent` (40), `WorkflowRunEvent` (31), `ResumeMetaEvent` (4), todas discriminadas por `event`. Campos comuns: `run_id`, `session_id`, `created_at`, `event_index`, e o id do dono (`agent_id`/`team_id`/`workflow_id`). Campos específicos por evento (`content`, `tool`, `tools`, `requirements`, `reasoning_content`, `error`, etc.).
+- `events.ts`: `AgentRunEvent` (35 variantes), `TeamRunEvent` (40), `WorkflowRunEvent` (31), `ResumeMetaEvent` (4), todas discriminadas por `event`. Campos comuns: `run_id`, `session_id`, `created_at`, `event_index`, e o id do dono (`agent_id`/`team_id`/`workflow_id`). Campos específicos por evento (`content`, `tool`, `tools`, `requirements`, `reasoning_content`, `error`, etc.). `event_index` só vem preenchido em runs em background e no stream de `/resume`; eventos de um stream SSE em foreground não o carregam.
 - `run.ts`: `RunOutput`, `TeamRunOutput`, `WorkflowRunOutput`, `RunStatus`.
 - `hitl.ts`: `ToolExecution`, `RunRequirement`, `UserInputField`, `UserFeedbackQuestion`. Quando o OpenAPI tem o schema, o tipo à mão é um alias do gerado, para não divergir.
 

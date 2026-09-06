@@ -6,6 +6,7 @@ export interface RunEventBase {
   run_id: string
   session_id?: string | null
   created_at?: number
+  /** Only present on background runs and on the /resume stream; foreground SSE events do not carry it. */
   event_index?: number
   agent_id?: string | null
   agent_name?: string | null

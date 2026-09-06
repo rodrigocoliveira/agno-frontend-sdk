@@ -10,13 +10,19 @@ e2e('agents (live)', () => {
     expect(agent).toBeTruthy()
   })
 
-  test('stream run: RunStarted → RunContent* → RunCompleted, all with event_index', async () => {
+  test('stream run: RunStarted → RunContent* → RunCompleted', async () => {
     const session_id = uid()
     const events = await drain(api.agents.runs.create(ids.agent, { message: 'Say hi in one word.', session_id }))
     expect(events[0]!.event).toBe('RunStarted')
     expect(events.at(-1)!.event).toBe('RunCompleted')
-    expect(events.every((e) => 'event_index' in e)).toBe(true)
     expect(events.some((e) => e.event === 'RunContent')).toBe(true)
+  })
+
+  test('background run events carry event_index', async () => {
+    const session_id = uid()
+    const events = await drain(api.agents.runs.create(ids.agent, { message: 'Say hi.', session_id, background: true }))
+    expect(events.length > 0).toBe(true)
+    expect(events.every((e) => typeof (e as { event_index?: number }).event_index === 'number')).toBe(true)
   })
 
   test('non-stream run returns a RunOutput', async () => {

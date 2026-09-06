@@ -5,6 +5,7 @@
   "workspaces": ["packages/*", "examples/*"],
   "scripts": {
     "generate": "bun run --filter '@rodrigocoliveira/agno-api' generate",
+    "agentos": "bun run --filter agentos-example dev",
     "typecheck": "bun run --filter './packages/*' typecheck",
     "build": "bun run --filter './packages/*' build",
     "test": "bun test packages",
