@@ -26,14 +26,13 @@ const api = createAgnoApi({
     localStorage.setItem('token', token)
     return token // or return nothing to have the lib call `token()` again
   },
-  params: { db_id: 'main' }, // applied to every route whose query accepts it (db_id, table, user_id, ...)
+  params: { db_id: 'main' }, // applied to every route that accepts the key, in the query or the body
 })
 ```
 
 - `token` can be a plain string or a function (sync or async); it is read on **every** request, never cached by the library.
 - `onTokenExpired` is called once per 401, even when several requests fail at the same time — the refresh is deduplicated and each of those requests is retried exactly once with the new token. If it returns a string, the returned token is used for the retry only; keep your `token` source up to date, because every later request reads `token` again. If `onTokenExpired` itself throws, the original 401 is thrown as an `AgnoApiError` with the refresh failure as its `cause`.
-- `params` are global defaults merged into the query of any route that accepts that key; a value passed in a specific call wins over the global one.
-  > **Note:** global `params` apply only to query parameters. The run routes (`agents.runs.create`, `teams.runs.create`, `workflows.runs.create`, and all `continue`) take `user_id` and `session_id` in the request body, not the query string — a global `params.user_id`/`params.session_id` will not reach them, so pass those per call.
+- `params` are global defaults merged into **any field of that name the route accepts** — query string *and* request body alike; a value passed in a specific call wins over the global one, and passing `undefined` in a call does not erase the global. A global `user_id`, for example, reaches `sessions.list` (query) as well as run creation, `sessions.create`, `memories.*` and `learnings.create` (body); a global `db_id`/`knowledge_id` reaches `knowledge.search`'s body. Keys the route declares nowhere are never sent.
 - `headers` (not shown above) are sent on every request; per-call `headers` may override `content-type` — only `authorization` and `idempotency-key` stay under the library's control.
 
 ## Signature rule

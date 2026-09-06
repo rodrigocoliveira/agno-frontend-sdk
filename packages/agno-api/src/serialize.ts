@@ -36,7 +36,10 @@ export function splitInput(
 ): { query: Record<string, unknown>; body: Record<string, unknown> | undefined } {
   const query: Record<string, unknown> = {}
   const body: Record<string, unknown> = {}
+  // Globals seed every field of that name the route accepts, in the query and in the body alike
+  // (e.g. a global `user_id` reaches both GET /sessions?user_id= and the POST /memories body).
   for (const k of meta.query) if (globals[k] !== undefined) query[k] = globals[k]
+  for (const k of meta.body) if (globals[k] !== undefined) body[k] = globals[k]
   for (const [k, v] of Object.entries(input ?? {})) {
     if (v === undefined) continue
     if (meta.query.includes(k)) {

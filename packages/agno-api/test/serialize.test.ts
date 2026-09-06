@@ -21,7 +21,7 @@ describe('buildQuery', () => {
 })
 
 describe('splitInput', () => {
-  const meta = { query: ['type', 'db_id'], contentType: 'application/json' } as const
+  const meta = { query: ['type', 'db_id'], body: ['session_name'], contentType: 'application/json' } as const
 
   test('routes keys to query or body by manifest', () => {
     expect(splitInput({ type: 'agent', session_name: 'x' }, meta, {})).toEqual({
@@ -39,16 +39,29 @@ describe('splitInput', () => {
     expect(splitInput({ db_id: undefined }, meta, { db_id: 'main' }).query).toEqual({ db_id: 'main' })
   })
   test('body is undefined for routes without body', () => {
-    expect(splitInput({ session_id: 's' }, { query: ['session_id'], contentType: null }, {})).toEqual({
+    expect(splitInput({ session_id: 's' }, { query: ['session_id'], body: [], contentType: null }, {})).toEqual({
       query: { session_id: 's' },
       body: undefined,
     })
   })
   test('throws on a body key for a route without body', () => {
-    expect(() => splitInput({ nope: 1 }, { query: [], contentType: null }, {})).toThrow(/unknown input key "nope"/)
+    expect(() => splitInput({ nope: 1 }, { query: [], body: [], contentType: null }, {})).toThrow(/unknown input key "nope"/)
+  })
+  test('a global lands in the body when the route takes that key in the body', () => {
+    const m = { query: [], body: ['memory', 'user_id'], contentType: 'application/json' } as const
+    expect(splitInput({ memory: 'm' }, m, { user_id: 'u1' })).toEqual({ query: {}, body: { user_id: 'u1', memory: 'm' } })
+  })
+  test('a call value wins over a body global, and undefined does not erase it', () => {
+    const m = { query: [], body: ['memory', 'user_id'], contentType: 'application/json' } as const
+    expect(splitInput({ user_id: 'u2' }, m, { user_id: 'u1' }).body).toEqual({ user_id: 'u2' })
+    expect(splitInput({ user_id: undefined }, m, { user_id: 'u1' }).body).toEqual({ user_id: 'u1' })
+  })
+  test('a global in neither list is not applied', () => {
+    const m = { query: ['type'], body: ['memory'], contentType: 'application/json' } as const
+    expect(splitInput({ memory: 'm' }, m, { user_id: 'u1' })).toEqual({ query: {}, body: { memory: 'm' } })
   })
   test('an undefined value for an unknown key is skipped on a bodyless route', () => {
-    expect(splitInput({ user_id: 'u', limit: undefined }, { query: ['user_id'], contentType: null }, {})).toEqual({
+    expect(splitInput({ user_id: 'u', limit: undefined }, { query: ['user_id'], body: [], contentType: null }, {})).toEqual({
       query: { user_id: 'u' },
       body: undefined,
     })

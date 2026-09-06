@@ -27,6 +27,14 @@ describe('createAgnoApi', () => {
     expect(m.calls[5]!.init.body).toBe('{"session_name":"n"}')
   })
 
+  test('a global param reaches a body field of the same name', async () => {
+    const m = mockFetch(() => json({}))
+    const api = createAgnoApi({ baseUrl: base, fetch: m.fetch, params: { user_id: 'u' } })
+    await api.memories.create({ memory: 'm' })
+    expect(m.calls[0]!.url).toBe(`${base}/memories`)
+    expect(JSON.parse(m.calls[0]!.init.body as string)).toEqual({ user_id: 'u', memory: 'm' })
+  })
+
   test('agents.runs.create streams multipart, stream:false returns json', async () => {
     const m = mockFetch((_, n) => (n === 1 ? sse(['data: {"event":"RunContent","content":"a"}\n\n']) : json({ run_id: 'r', status: 'COMPLETED' })))
     const api = createAgnoApi({ baseUrl: base, fetch: m.fetch })

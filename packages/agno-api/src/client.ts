@@ -22,7 +22,7 @@ import type { Primitive } from './serialize'
 import { createTransport, type Method, type RequestOptions, type TransportConfig } from './transport'
 
 export interface AgnoApiConfig extends TransportConfig {
-  /** Applied to every route whose query accepts the key (e.g. db_id, table, user_id). A value passed in the call wins. */
+  /** Applied to every route that accepts the key, in the query or in the request body (e.g. db_id, user_id). A value passed in the call wins. */
   params?: Record<string, Primitive>
 }
 

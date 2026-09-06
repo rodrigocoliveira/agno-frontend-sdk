@@ -48,7 +48,9 @@ for (const path of Object.keys(spec.paths).sort()) {
     const clash = query.filter((q) => bodyKeys.includes(q))
     if (clash.length) problems.push(`${method} ${path}: query/body collision on ${clash.join(', ')}`)
     const q = query.map((k) => `'${k}'`).join(', ')
-    lines.push(`  '${method} ${path}': { query: [${q}], contentType: ${contentType ? `'${contentType}'` : 'null'} },`)
+    // Body keys are sorted so the emitted manifest is stable regardless of spec property order.
+    const b = [...bodyKeys].sort().map((k) => `'${k}'`).join(', ')
+    lines.push(`  '${method} ${path}': { query: [${q}], body: [${b}], contentType: ${contentType ? `'${contentType}'` : 'null'} },`)
   }
 }
 if (problems.length) {
@@ -61,6 +63,7 @@ export type ContentType = 'application/json' | 'multipart/form-data' | 'applicat
 
 export interface RouteMeta {
   readonly query: readonly string[]
+  readonly body: readonly string[]
   readonly contentType: ContentType | null
 }
 
