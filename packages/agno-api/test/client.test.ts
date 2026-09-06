@@ -76,4 +76,46 @@ describe('createAgnoApi', () => {
     for await (const e of api.stream<{ x: number }>({ method: 'post', path: '/my/stream' })) out.push(e)
     expect(out).toEqual([{ x: 1 }])
   })
+
+  test('remaining groups build the right URLs', async () => {
+    const m = mockFetch(() => json({}))
+    const api = createAgnoApi({ baseUrl: base, fetch: m.fetch })
+    await api.memories.list({ user_id: 'u' })
+    await api.memories.topics()
+    await api.memories.optimize({ user_id: 'u', apply: true })
+    await api.learnings.deleteUser('u', { learning_type: 'x' })
+    await api.knowledge.content.status('c1')
+    await api.knowledge.remoteContent.create({ path: 's3://b', reader_id: 'r' } as any)
+    await api.knowledge.sourceFiles('k', 's', { prefix: 'p' })
+    await api.components.configs.setCurrent('c', 3, {})
+    await api.schedules.trigger('sc')
+    await api.approvals.resolve('ap', { decision: 'approve' } as any)
+    await api.queue.get()
+    await api.serviceAccounts.delete('sa')
+    await api.registry.get({ resource_type: 'agent' })
+    await api.evals.deleteMany({ eval_run_ids: ['e'] })
+    await api.metrics.refreshStatus()
+    await api.traces.search({ filter: {}, limit: 10 } as any)
+    await api.databases.migrate('db', { target_version: '2' })
+    expect(m.calls.map((c) => `${c.init.method} ${c.url.slice(base.length)}`)).toEqual([
+      'GET /memories?user_id=u',
+      'GET /memory_topics',
+      'POST /optimize-memories',
+      'DELETE /learnings/users/u?learning_type=x',
+      'GET /knowledge/content/c1/status',
+      'POST /knowledge/remote-content',
+      'GET /knowledge/k/sources/s/files?prefix=p',
+      'POST /components/c/configs/3/set-current',
+      'POST /schedules/sc/trigger',
+      'POST /approvals/ap/resolve',
+      'GET /queue',
+      'DELETE /service-accounts/sa',
+      'GET /registry?resource_type=agent',
+      'DELETE /eval-runs',
+      'GET /metrics/refresh/status',
+      'POST /traces/search',
+      'POST /databases/db/migrate?target_version=2',
+    ])
+    expect(m.calls[5]!.init.body).toBeInstanceOf(URLSearchParams)
+  })
 })

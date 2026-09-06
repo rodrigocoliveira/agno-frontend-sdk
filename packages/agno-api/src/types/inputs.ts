@@ -61,3 +61,11 @@ export interface ResumeInput {
   last_event_index?: number | null
   session_id?: string | null
 }
+
+export interface KnowledgeUploadInput {
+  db_id?: string | null; knowledge_id?: string | null
+  name?: string | null; description?: string | null; url?: string | null
+  metadata?: string | Record<string, unknown> | null
+  file?: File | Blob | null; text_content?: string | null; reader_id?: string | null
+  chunker?: string | null; chunk_size?: number | null; chunk_overlap?: number | null
+}
