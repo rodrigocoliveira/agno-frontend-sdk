@@ -10,6 +10,7 @@ async function* gen(events: AnyEvent[], failAfter?: number) {
     n++
     yield e
   }
+  if (failAfter !== undefined && n === failAfter) throw new TypeError('network down')
 }
 const e = (i: number, event = 'RunContent'): AnyEvent => ({ event, run_id: 'r', event_index: i })
 const noSleep = async () => {}
@@ -62,7 +63,7 @@ describe('runStream', () => {
       first: () => gen([e(0, 'RunCompleted')], 1),
       resume: () => { throw new Error('should not resume') },
       onEvent: () => { done = true },
-      getIndex: () => 0, isDone: () => done, signal: new AbortController().signal, sleep: noSleep,
+      getIndex: () => null, isDone: () => done, signal: new AbortController().signal, sleep: noSleep,
     })
     await expect(runStream({
       first: () => gen([], 0), resume: null, onEvent: () => {}, getIndex: () => null, isDone: () => false,

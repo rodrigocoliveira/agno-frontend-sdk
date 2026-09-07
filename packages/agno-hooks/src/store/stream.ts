@@ -32,36 +32,17 @@ export interface RunStreamOptions {
 
 /**
  * Consumes one run's stream to the end. Skips meta frames, drops events whose event_index we already applied,
- * reconnects through `resume` on connection loss (delays 500/1000/2000 ms; the backoff counter resets after
- * progress). Resolves on abort or a clean end we can't do anything more with; rejects with ConnectionLostError
- * once retries are exhausted (or reconnection is impossible), or with the AgnoApiError when the request itself
- * was refused (never retried).
- *
- * A source iterable can end two ways: it throws (a network error, or the explicit ConnectionLostError raised
- * below for a `/resume` meta `error` frame), or it just returns (the connection closed quietly, which is the
- * common shape for a dropped SSE stream). Both are "connection lost" unless `isDone()` says the run is over.
- * The one exception: a quiet end that produced literally nothing (not even a duplicate) with no way to
- * reconnect is a hard failure (we never got anything from the server), while a quiet, empty end that a
- * `resume` *could* have retried is treated as caught up rather than looped forever.
+ * reconnects through `resume` on thrown errors (delays 500/1000/2000 ms; the backoff counter resets after
+ * progress). A clean (non-throwing) end of the source iterable always resolves — the AgentOS server closes the
+ * SSE stream normally both on completion and on a non-terminal pause (`RunPaused`), and neither should trigger
+ * a reconnection attempt. Rejects with ConnectionLostError once retries are exhausted or reconnection is
+ * impossible, or with the AgnoApiError when the request itself was refused (never retried).
  */
 export async function runStream(o: RunStreamOptions): Promise<void> {
   const delays = o.delays ?? [500, 1000, 2000]
   const sleep = o.sleep ?? defaultSleep
   let source = o.first
   let attempt = 0
-  let everProgressed = false
-
-  /** Schedules the next reconnect attempt, or throws ConnectionLostError when none is possible. */
-  const reconnectOrThrow = async (cause?: unknown): Promise<void> => {
-    const lost = cause instanceof ConnectionLostError ? cause : new ConnectionLostError(cause)
-    if (!o.resume || attempt >= delays.length) throw lost
-    const next = o.resume(o.getIndex())
-    if (!next) throw lost
-    await sleep(delays[attempt]!)
-    attempt++
-    source = () => next
-  }
-
   for (;;) {
     try {
       for await (const ev of source()) {
@@ -73,26 +54,20 @@ export async function runStream(o: RunStreamOptions): Promise<void> {
         const idx = o.getIndex()
         if (typeof ev.event_index === 'number' && idx !== null && ev.event_index <= idx) continue
         o.onEvent(ev)
-        everProgressed = true
         attempt = 0
       }
+      return
     } catch (err) {
       if (o.signal.aborted || isAbort(err)) return
       if (isAgnoApiError(err)) throw err
       if (o.isDone()) return
-      await reconnectOrThrow(err)
-      continue
+      const lost = err instanceof ConnectionLostError ? err : new ConnectionLostError(err)
+      if (!o.resume || attempt >= delays.length) throw lost
+      const next = o.resume(o.getIndex())
+      if (!next) throw lost
+      await sleep(delays[attempt]!)
+      attempt++
+      source = () => next
     }
-
-    // The iterable returned normally: a quiet end, not an error.
-    if (o.isDone()) return
-    if (!everProgressed) {
-      // Nothing was ever applied. With no way to reconnect this was a failed connection attempt;
-      // with `resume` available, treat a quiet empty end as caught up rather than retrying forever.
-      if (!o.resume) throw new ConnectionLostError()
-      return
-    }
-    if (!o.resume) return // Real content streamed through; nothing left to do without a way to reconnect.
-    await reconnectOrThrow()
   }
 }
