@@ -79,4 +79,4 @@ This is what makes reload-mid-run and multi-tab scenarios work — see
 [reconnection.md](../reconnection.md) for what a reload actually does to a hook's snapshot and how
 `resume` picks the run back up.
 
-**See it in the demo:** `/agents/chat`, `/agents/tools`, `/workflows/nightly`
+**See it in the demo:** `/agents/chat`, `/agents/confirm`, `/agents/tools`, `/workflows/nightly`
