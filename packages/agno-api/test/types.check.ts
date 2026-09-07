@@ -154,3 +154,15 @@ void _d1; void _d2; void _d3; void _d4; void _d5; void _d6; void _d7
 // @ts-expect-error a field the wire does not have must be caught
 const _dBad: never = null as unknown as Extra<{ requirements?: unknown }, '/workflows/{workflow_id}/runs/{run_id}/continue'>
 void _dBad
+
+// --- HITL types (spec 2 dependencies) ---
+import type { StepRequirement, UserFeedbackQuestion } from '../src'
+
+const q: UserFeedbackQuestion = { question: 'Where?', header: 'Use', options: [{ label: 'Trail', description: null }], multi_select: false, selected_options: ['Trail'] }
+void q
+const sr: StepRequirement = { step_id: 's1', requires_confirmation: true, confirmed: true }
+const wc: WorkflowContinueInput = { step_requirements: [sr] }
+void wc
+type Paused = Extract<WorkflowRunEvent, { event: 'WorkflowPaused' }>
+const wp: Paused = { event: 'WorkflowPaused', run_id: 'r', pause_kind: 'step', step_requirements: [sr], paused_step_index: 0 }
+void wp

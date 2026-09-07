@@ -1,0 +1,13 @@
+* { box-sizing: border-box } body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: #111 }
+.app { display: grid; grid-template-columns: 240px 1fr; height: 100vh }
+.sidebar { border-right: 1px solid #ddd; padding: 12px; overflow: auto } .sidebar ul { list-style: none; padding: 0; margin: 8px 0 }
+.sidebar li button, .sidebar .new, .tabs button { width: 100%; text-align: left; padding: 6px 8px; border: 0; background: none; cursor: pointer; border-radius: 6px }
+.sidebar li.active button, .tabs button.active { background: #eef } .tabs { display: flex; gap: 4px; margin-bottom: 8px } .tabs button { text-align: center }
+main { display: flex; flex-direction: column; height: 100vh }
+.messages { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px }
+.bubble { max-width: 70%; padding: 8px 12px; border-radius: 12px; white-space: pre-wrap } .bubble.user { align-self: flex-end; background: #dbeafe } .bubble.assistant { align-self: flex-start; background: #f3f4f6 }
+.chip { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #e5e7eb; margin: 2px 4px 2px 0 } .chip.error { background: #fee2e2 } .chip.pending { background: #fef3c7 }
+.pending { border-top: 1px solid #ddd; background: #fffbeb; padding: 12px 16px } .pending button.active { background: #fde68a; border-color: #f59e0b } .pending .card { border: 1px solid #f59e0b; border-radius: 8px; padding: 10px; margin-bottom: 8px; background: #fff }
+.composer { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #ddd } .composer input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 6px }
+.error { color: #b91c1c } .steps { display: flex; flex-direction: column; gap: 6px } .step { border-left: 3px solid #999; padding-left: 8px } .step.completed { border-color: #16a34a } .step.paused { border-color: #f59e0b }
+.members { margin-left: 16px; border-left: 2px dashed #ccc; padding-left: 8px }

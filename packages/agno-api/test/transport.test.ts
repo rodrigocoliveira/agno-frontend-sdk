@@ -125,6 +125,28 @@ describe('request: 401 refresh', () => {
     expect(m.calls).toHaveLength(2)
   })
 
+  test('without a bearer token (cookie/header auth) the refresh is always followed by one retry', async () => {
+    let refreshed = false
+    const m = mockFetch(() => (refreshed ? json({ ok: true }) : json({ detail: 'expired' }, 401)))
+    const t = createTransport({ baseUrl: base, fetch: m.fetch, onTokenExpired: async () => { refreshed = true } })
+    expect(await t.request<{ ok: boolean }>({ method: 'get', path: '/health' })).toEqual({ ok: true })
+    expect(m.calls).toHaveLength(2)
+  })
+
+  test('onTokenExpired that yields the same token → original 401, no retry', async () => {
+    // token() reports the same value before and after the refresh: the token that just got the 401
+    // cannot make a retry succeed, so the original 401 surfaces without a second request.
+    let refreshes = 0
+    const m = mockFetch(() => json({ detail: 'expired' }, 401))
+    const t = createTransport({ baseUrl: base, fetch: m.fetch, token: () => 'same', onTokenExpired: () => { refreshes++ } })
+    const e = await t.request({ method: 'get', path: '/health' }).catch((x) => x) as AgnoApiError
+    expect(e).toBeInstanceOf(AgnoApiError)
+    expect(e.status).toBe(401)
+    expect(e.detail).toBe('expired')
+    expect(refreshes).toBe(1)
+    expect(m.calls).toHaveLength(1)
+  })
+
   test('onTokenExpired returning a string → used for the retry, but token() still wins on later requests', async () => {
     // token() keeps reporting the stale value even after the refresh — it wins over the
     // override on any request after the retry, since a defined `config.token` always wins.
@@ -159,8 +181,10 @@ describe('request: 401 refresh', () => {
 
   test('second 401 after refresh → throws, no loop', async () => {
     let refreshes = 0
+    let token = 'old'
     const m = mockFetch(() => json({ detail: 'expired' }, 401))
-    const t = createTransport({ baseUrl: base, fetch: m.fetch, token: 't', onTokenExpired: () => { refreshes++ } })
+    // The refresh really does hand back a different token, so the retry happens — and its 401 ends it.
+    const t = createTransport({ baseUrl: base, fetch: m.fetch, token: () => token, onTokenExpired: () => { refreshes++; token = 'new' } })
     const e = await t.request({ method: 'get', path: '/health' }).catch((x) => x) as AgnoApiError
     expect(e.status).toBe(401)
     expect(refreshes).toBe(1)

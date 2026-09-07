@@ -1,4 +1,4 @@
-import type { RunRequirement, ToolExecution } from './hitl'
+import type { RunRequirement, StepRequirement, ToolExecution } from './hitl'
 
 export interface RunInputBase {
   message: string
@@ -46,9 +46,9 @@ export interface TeamContinueInput extends ContinueInputBase {
   requirements?: RunRequirement[]
 }
 
-/** Workflow: decisions travel inside `step_requirements[].tool_execution`. Sent as a JSON string. No fork/regenerate fields on this route. */
+/** Workflow: decisions travel inside step_requirements[] (StepRequirement, matched by step_id; only the last one is active). Sent as a JSON string. No fork/regenerate fields on this route. */
 export interface WorkflowContinueInput {
-  step_requirements?: RunRequirement[]
+  step_requirements?: StepRequirement[]
   session_id?: string | null
   user_id?: string | null
   stream?: boolean
