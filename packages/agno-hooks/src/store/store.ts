@@ -348,6 +348,9 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
       const toolDecisions = (decisions as Decision<'workflow'>[]).filter((d): d is ToolExecution => 'tool_call_id' in d)
       const byStep = new Map(stepDecisions.map((d) => [d.step_id, d]))
       const reqs = (run as WorkflowRun).stepRequirements ?? []
+      // A paused workflow without requirements (the WorkflowPaused frame never reached us and the row
+      // carried none) has nothing a decision can attach to: say so instead of posting an empty list.
+      if (reqs.length === 0 && decisions.length > 0) throw new Error('No step requirement to continue')
       const list = reqs.map((sr) => byStep.get(sr.step_id) ?? sr)
       const active = list.at(-1)
       if (active?.requires_executor_input) {

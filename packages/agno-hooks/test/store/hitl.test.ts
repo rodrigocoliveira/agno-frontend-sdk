@@ -102,6 +102,19 @@ describe('continue', () => {
     expect(done.pending).toBeNull()
   })
 
+  test('workflow paused without requirements rejects a decision instead of posting []', async () => {
+    const m = mockFetch((call) => call.url.endsWith('/continue')
+      ? frames([{ event: 'WorkflowCompleted', run_id: 'w1', content: 'ok' }])
+      : frames([{ event: 'WorkflowStarted', run_id: 'w1', session_id: 's1' }, { event: 'WorkflowPaused', run_id: 'w1', pause_kind: 'step' }]))
+    const store = createAgnoStore({ api: apiWith(m.fetch), target: { kind: 'workflow', id: 'wf' } })
+    await store.send('go')
+    expect(store.getSnapshot().pending).toEqual({ runId: 'w1', stepRequirements: [], tools: [] })
+    await expect(store.continue([{ step_id: 'ghost', confirmed: true }])).rejects.toThrow('No step requirement to continue')
+    expect(m.calls).toHaveLength(1)
+    await store.continue([]) // an explicit empty continue is still allowed (the server decides)
+    expect(bodyParam(m.calls[1]!, 'step_requirements')).toBe('[]')
+  })
+
   test('workflow executor pause: pending.tools exposes the nested tools; continue re-wraps the decision', async () => {
     const nested = { tool_call_id: 'x1', tool_name: 'add_one', tool_args: { x: 41 }, requires_confirmation: true }
     const sr = { step_id: 'st1', step_name: 'echo', requires_executor_input: true, executor_id: 'test-agent', executor_requirements: [{ id: 'req-x1', tool_execution: nested }] }
