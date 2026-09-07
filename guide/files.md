@@ -20,6 +20,7 @@ export interface RunInput {
 // packages/agno-api/src/types/inputs.ts
 export interface AgentRunInput extends RunInputBase {
   files?: (File | Blob)[]
+  /** Sent as a JSON string when an object is given. */
   files_metadata?: string | Record<string, unknown> | null
 }
 

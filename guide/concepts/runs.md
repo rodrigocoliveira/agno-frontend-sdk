@@ -156,9 +156,9 @@ export function RunCard({ run, onRetry, nested = false }: { run: Run; onRetry?: 
 }
 ```
 
-The pattern to note: `run.kind === 'workflow'` renders `StepList` instead of `content` and
-`tools`, `run.kind === 'team'` additionally renders `MemberRuns`, and everything else (the input
-bubble, the status badge, the error/retry affordance) is shared across all three kinds because it
-lives on `RunBase`.
+The pattern to note: `run.kind === 'workflow'` renders `StepList` instead of `tools` and member
+runs — `content` still renders for every kind, workflows included — `run.kind === 'team'`
+additionally renders `MemberRuns`, and everything else (the input bubble, the status badge, the
+error/retry affordance) is shared across all three kinds because it lives on `RunBase`.
 
 **See it in the demo:** `/agents/chat`

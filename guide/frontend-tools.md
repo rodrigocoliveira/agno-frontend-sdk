@@ -115,8 +115,9 @@ auto-run path would, just on demand instead of automatically.
 The text input next to it calls `chat.resolveTool(toolCallId, result)`, which only records a
 resolution in the store — it does not call `continue` by itself. This is the escape hatch for a
 tool with no `frontendTools` entry, or for supplying a result from something other than the mapped
-function (typing it in, in the demo's case). Once every pending tool on the run has a resolution,
-`PendingPanel` shows a "Continue with recorded results" button that calls `chat.continue([])` to
-send them all at once.
+function (typing it in, in the demo's case). Whenever the pause has no other tool left needing a
+decision and at least one `external_execution_required` tool, `PendingPanel` shows a "Continue with
+recorded results" button that calls `chat.continue([])` to send whatever has been recorded so far —
+it does not wait for every pending tool to have a resolution first.
 
 **See it in the demo:** `/agents/browser`, `/teams/field`

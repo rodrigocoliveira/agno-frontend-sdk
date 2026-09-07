@@ -63,7 +63,10 @@ export function StepList({ steps }: { steps: StepRun[] }) {
 
 `report` is the demo workflow that exercises this: two steps run inside a `Parallel`, and a third
 only shows up when its `Condition` evaluates true — the step list shows every entry that actually
-ran, in order, regardless of which combinator produced it.
+ran, in order, regardless of which combinator produced it. A `Parallel` or `Condition` wrapper is
+itself a list entry, though, and it shares its `index` with its first child (`report`'s `gather`
+wrapper and its `sales` child both carry index 1) — so seeing the same step number rendered twice in
+a row is expected, not a bug.
 
 ```python
 # examples/demo-agentos/workflows/report.py
