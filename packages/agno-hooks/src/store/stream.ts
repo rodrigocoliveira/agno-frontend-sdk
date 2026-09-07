@@ -35,8 +35,10 @@ export interface RunStreamOptions {
  * reconnects through `resume` on thrown errors (delays 500/1000/2000 ms; the backoff counter resets after
  * progress). A clean (non-throwing) end of the source iterable always resolves — the AgentOS server closes the
  * SSE stream normally both on completion and on a non-terminal pause (`RunPaused`), and neither should trigger
- * a reconnection attempt. Rejects with ConnectionLostError once retries are exhausted or reconnection is
- * impossible, or with the AgnoApiError when the request itself was refused (never retried).
+ * a reconnection attempt. An `AgnoApiError` with `status: 0` (network failure) is treated as a dropped
+ * connection and reconnects like any other thrown error. Rejects with ConnectionLostError once retries are
+ * exhausted or reconnection is impossible, or with the AgnoApiError when the request itself was refused
+ * (never retried).
  */
 export async function runStream(o: RunStreamOptions): Promise<void> {
   const delays = o.delays ?? [500, 1000, 2000]
@@ -59,7 +61,7 @@ export async function runStream(o: RunStreamOptions): Promise<void> {
       return
     } catch (err) {
       if (o.signal.aborted || isAbort(err)) return
-      if (isAgnoApiError(err)) throw err
+      if (isAgnoApiError(err) && err.status !== 0) throw err
       if (o.isDone()) return
       const lost = err instanceof ConnectionLostError ? err : new ConnectionLostError(err)
       if (!o.resume || attempt >= delays.length) throw lost

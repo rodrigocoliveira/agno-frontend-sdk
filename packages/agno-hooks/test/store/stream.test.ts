@@ -81,6 +81,23 @@ describe('runStream', () => {
     await expect(p).rejects.toBe(err)
   })
 
+  test('AgnoApiError with status 0 (network failure) is a drop and reconnects', async () => {
+    const drop = new AgnoApiError({ status: 0, method: 'post', path: '/x', detail: 'network down' })
+    let last: number | null = null
+    let resumed = 0
+    await runStream({
+      first: () => (async function* () { yield e(0); throw drop })(),
+      resume: () => { resumed++; return gen([e(1, 'RunCompleted')]) },
+      onEvent: (ev) => { last = ev.event_index as number },
+      getIndex: () => last,
+      isDone: () => last === 1,
+      signal: new AbortController().signal,
+      sleep: noSleep,
+    })
+    expect(resumed).toBe(1)
+    expect(last as unknown as number).toBe(1)
+  })
+
   test('meta error event ends the stream as a connection loss', async () => {
     const p = runStream({
       first: () => gen([{ event: 'error', error: 'gone' } as AnyEvent]), resume: null, onEvent: () => {},

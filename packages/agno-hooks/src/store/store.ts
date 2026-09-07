@@ -5,7 +5,7 @@ import {
   type Run, type RunOf, type RunRowLike, type SendInput, type Snapshot, type Target, type TeamRun, type WorkflowRun,
 } from '../types'
 import { routesFor } from './routes'
-import { ConnectionLostError, runStream } from './stream'
+import { runStream } from './stream'
 
 export interface StoreOptions<K extends Kind> {
   api: AgnoApi
@@ -35,19 +35,6 @@ export interface AgnoStore<K extends Kind> {
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const isLocalId = (id: string) => id.startsWith('local-')
-
-/**
- * The transport reports a connection it could not open or lost mid-stream as an AgnoApiError with
- * `status: 0`; a refused request carries the HTTP status. `runStream` never retries an AgnoApiError,
- * so the lost connection has to reach it as a ConnectionLostError to be reconnectable.
- */
-async function* retryableOnDrop(source: AsyncIterable<AnyEvent>): AsyncIterable<AnyEvent> {
-  try {
-    yield* source
-  } catch (e) {
-    throw isAgnoApiError(e) && e.status === 0 ? new ConnectionLostError(e) : e
-  }
-}
 
 export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoStore<K> {
   const kind = options.target.kind
@@ -109,9 +96,9 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     const current = () => find(id)
     try {
       await runStream({
-        first: () => retryableOnDrop(spec.first(ac.signal)),
+        first: () => spec.first(ac.signal),
         resume: spec.resumable
-          ? (idx) => (isLocalId(id) ? null : retryableOnDrop(routes.resume(id, { session_id: sessionId ?? undefined, last_event_index: idx ?? undefined }, { signal: ac.signal })))
+          ? (idx) => (isLocalId(id) ? null : routes.resume(id, { session_id: sessionId ?? undefined, last_event_index: idx ?? undefined }, { signal: ac.signal }))
           : null,
         onEvent: (ev) => {
           const run = current()
