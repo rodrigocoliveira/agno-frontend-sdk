@@ -6,11 +6,15 @@ import auth
 import settings
 from agents import approval, browser, chat, confirm, interview, tools
 from db import db
+from teams import field, research, support
+from workflows import nightly, publish, report
 
 agent_os = AgentOS(
     id="demo",
     name="agno-frontend-sdk demo",
     agents=[chat.agent, tools.agent, browser.agent, confirm.agent, interview.agent, approval.agent],
+    teams=[support.team, research.team, field.team],
+    workflows=[publish.workflow, report.workflow, nightly.workflow],
     db=db,
     authorization=True,
     authorization_config=auth.CONFIG,
