@@ -72,6 +72,27 @@ describe('continue', () => {
     expect(store.getSnapshot().runs[0]!.status).toBe('completed')
   })
 
+  test('a rejected continue leaves the pause untouched; the decisions land when the server accepts', async () => {
+    let n = 0
+    const m = mockFetch((call) => call.url.endsWith('/continue')
+      ? (++n === 1 ? json({ detail: 'boom' }, 500) : continued('r1'))
+      : pausedWith('r1', [confirmTool]))
+    const store = agentStore(m.fetch)
+    await store.send('hi')
+    expect(store.getSnapshot().runs[0]!.requirements).toBeNull()
+    await store.continue([confirm(confirmTool)])
+    const failed = store.getSnapshot()
+    expect(failed.runs[0]).toMatchObject({ status: 'paused', error: expect.stringContaining('boom') })
+    expect(failed.runs[0]!.tools[0]!.confirmed).toBeUndefined()
+    expect(failed.pending!.tools).toEqual([confirmTool])
+    // `RunCompleted` carries no `tools`, so only the accepted decisions can answer the execution.
+    await store.continue([confirm(confirmTool)])
+    const done = store.getSnapshot()
+    expect(done.runs[0]!.status).toBe('completed')
+    expect(done.runs[0]!.tools[0]!.confirmed).toBe(true)
+    expect(done.pending).toBeNull()
+  })
+
   test('approval-gated tool needs no local decision; 403 keeps the run paused with error', async () => {
     const gated = { ...confirmTool, approval_type: 'required', approval_id: 'ap1' }
     let n = 0

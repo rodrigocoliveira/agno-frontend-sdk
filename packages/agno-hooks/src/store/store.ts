@@ -84,10 +84,16 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
 
   const failRun = (run: RunOf<K>, err: unknown): RunOf<K> => ({ ...run, status: 'error', error: messageOf(err) })
 
+  /** The events that prove the server took a continue; the first one applies `onAccepted`. */
+  const ACCEPTED = new Set(['RunContinued', 'TeamRunContinued', 'StepContinued'])
+
   interface StreamSpec {
     first: (signal: AbortSignal) => AsyncIterable<AnyEvent>
-    resumable: boolean
+    /** `false` = never reconnect. A function is re-read on every reconnect (a 409-downgraded continue). */
+    resumable: boolean | (() => boolean)
     onFail: (run: RunOf<K>, err: unknown) => RunOf<K>
+    /** Applied once, to the run produced by the first event of `ACCEPTED`. */
+    onAccepted?: (run: RunOf<K>) => RunOf<K>
   }
 
   /**
@@ -114,7 +120,9 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     const merged = (cur.kind === 'team' ? { ...fresh, members: cur.members }
       : cur.kind === 'workflow' ? { ...fresh, steps: reconcileSteps(cur.steps, row.step_results) }
       : fresh) as RunOf<K>
-    replace(id, { ...merged, eventIndex: current.eventIndex })
+    // The row cannot know the local run identity: `local` (what `cancel()` looks for) and the `File[]`
+    // the caller attached only ever existed on this client.
+    replace(id, { ...merged, local: current.local, input: current.input, eventIndex: current.eventIndex })
     if (isTerminal(merged.status)) resolutions.delete(id)
     commit()
     if (merged.status === 'paused') void autoRunTools(id).catch(() => {})
@@ -125,17 +133,20 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     const ac = new AbortController()
     streams.set(id, ac)
     const current = () => find(id)
+    const canResume = typeof spec.resumable === 'function' ? spec.resumable : () => spec.resumable === true
+    let onAccepted = spec.onAccepted
     try {
       await runStream({
         first: () => spec.first(ac.signal),
-        resume: spec.resumable
-          ? (idx) => (isLocalId(id) ? null : routes.resume(id, { session_id: sessionId ?? undefined, last_event_index: idx ?? undefined }, { signal: ac.signal }))
-          : null,
+        resume: (idx) => (isLocalId(id) || !canResume()
+          ? null
+          : routes.resume(id, { session_id: sessionId ?? undefined, last_event_index: idx ?? undefined }, { signal: ac.signal })),
         onEvent: (ev) => {
           const run = current()
           if (!run) return
           const wasPaused = run.status === 'paused'
           let next = applyEvent(run, ev)
+          if (onAccepted && ACCEPTED.has(ev.event)) { next = onAccepted(next); onAccepted = undefined }
           if (typeof ev.event_index === 'number') next = { ...next, eventIndex: ev.event_index }
           replace(id, next)
           if (next.id !== id) { streams.delete(id); streams.set(next.id, ac); id = next.id }
@@ -167,8 +178,11 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     } catch (e) {
       if (destroyed) return
       // A caller-chosen session id only exists once its first run is created: until then AgentOS
-      // answers GET /sessions/{id}/runs with 404. That is an empty session, not a failure.
-      if (isAgnoApiError(e) && e.status === 404) { runs = []; status = 'ready'; error = null; commit(); return }
+      // answers GET /sessions/{id}/runs with 404 "Session with ID … not found". That is an empty session,
+      // not a failure — but a plain 404 (a wrong baseUrl, say) must still surface as an error.
+      if (isAgnoApiError(e) && e.status === 404 && /session/i.test(String(e.detail ?? e.message))) {
+        runs = []; status = 'ready'; error = null; commit(); return
+      }
       status = 'error'; error = e instanceof Error ? e : new Error(String(e)); commit()
       return
     }
@@ -286,16 +300,15 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
         else if (t.approval_type === 'required') continue
         else throw new Error(`Tool ${t.tool_call_id} still pending`)
       }
-      resolutions.set(run.id, res)
       submitted = final
       wire = kind === 'agent' ? { tools: final } : { requirements: final.map((t) => wrapRequirement(run, t)) }
     }
-    // AgentOS answers a background continue with a `RunCompleted` that carries no `tools`, so the run would
-    // keep the unanswered executions from `RunPaused`. The decisions we just sent are the truth until the
-    // server sends its own list back.
+    // The decisions stay out of the run until the server accepts them: a rejected continue must leave the
+    // pause exactly as it was (a merged `confirmed: true` empties `pendingTools` and strands the run).
     const before = find(run.id)!
-    replace(run.id, { ...before, tools: submitted.reduce(upsertTool, before.tools), status: 'running', error: null }); commit()
+    replace(run.id, { ...before, status: 'running', error: null }); commit()
     const body = { ...wire, ...(extra ?? {}), session_id: sessionId ?? undefined, stream: true }
+    let downgraded = false
     await startStream(run.id, {
       first: async function* (signal) {
         try {
@@ -304,10 +317,16 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
           // AgentOS refuses `background=true` on a paused run with no durable queue ticket (409,
           // "Retry without background") — a workflow paused on a plain SqliteDb is always one of these.
           if (!background || !isAgnoApiError(err) || err.status !== 409) throw err
+          // The retried run is foreground: there is nothing to reconnect to, so the stream must not resume.
+          downgraded = true
           yield* routes.continue(run.id, { ...body, background: false }, { signal })
         }
       },
-      resumable: background,
+      resumable: () => background && !downgraded,
+      // AgentOS answers a background continue with a `RunCompleted` that carries no `tools`, so the run
+      // would keep the unanswered executions from `RunPaused`. Once the server has taken the continue, the
+      // decisions we sent are the truth until it sends its own list back.
+      onAccepted: submitted.length === 0 ? undefined : (r) => ({ ...r, tools: submitted.reduce(upsertTool, r.tools) }),
       onFail: (r, err) => (isAgnoApiError(err) ? { ...r, status: 'paused', error: messageOf(err) } : failRun(r, err)),
     })
   }

@@ -19,9 +19,10 @@ e2e('agno-hooks store (live)', () => {
     const a = s.getSnapshot()
     expect(a.runs[0]).toMatchObject({ status: 'completed', content: 'Echo: hello there ', input: { message: 'hello there' } })
     expect(a.sessionId).toBeTruthy()
-    const h = await until(agent(a.sessionId!), (x) => x.status === 'ready')
+    const reloaded = agent(a.sessionId!)
+    const h = await until(reloaded, (x) => x.status === 'ready')
     expect(h.runs.map((r) => [r.id, r.status, r.content, r.input.message])).toEqual(a.runs.map((r) => [r.id, r.status, r.content, r.input.message]))
-    s.destroy()
+    s.destroy(); reloaded.destroy()
   })
 
   test('confirmation: pause → continue(confirm) → completed, answer persisted', async () => {
@@ -32,9 +33,10 @@ e2e('agno-hooks store (live)', () => {
     expect(p.tools[0]).toMatchObject({ tool_name: 'add_one', requires_confirmation: true })
     await s.continue([confirm(p.tools[0]!)])
     expect(s.getSnapshot().runs[0]!.status).toBe('completed')
-    const h = await until(agent(s.getSnapshot().sessionId!), (x) => x.status === 'ready')
+    const reloaded = agent(s.getSnapshot().sessionId!)
+    const h = await until(reloaded, (x) => x.status === 'ready')
     expect(h.runs[0]!.tools.find((t) => t.tool_name === 'add_one')).toMatchObject({ confirmed: true, result: '42' })
-    s.destroy()
+    s.destroy(); reloaded.destroy()
   })
 
   test('ask_user: user_feedback_schema → provideUserFeedback → selected_options persisted', async () => {
@@ -48,9 +50,10 @@ e2e('agno-hooks store (live)', () => {
     const done = s.getSnapshot().runs[0]!
     expect(done.status).toBe('completed')
     expect(done.tools[0]!.user_feedback_schema![0]!.selected_options).toEqual(['Trail'])
-    const h = await until(agent(done.sessionId!), (x) => x.status === 'ready')
+    const reloaded = agent(done.sessionId!)
+    const h = await until(reloaded, (x) => x.status === 'ready')
     expect(h.runs[0]!.tools[0]!.user_feedback_schema![0]!.selected_options).toEqual(['Trail'])
-    s.destroy()
+    s.destroy(); reloaded.destroy()
   })
 
   test('frontend tool: executed by the map, continued automatically', async () => {
@@ -91,9 +94,10 @@ e2e('agno-hooks store (live)', () => {
     expect(pending.tools[0]!.tool_name).toBe('add_one')
     await h.continue([confirm(pending.tools[0]!)])
     expect(h.getSnapshot().runs[0]!.status).toBe('completed')
-    const back = await until(createAgnoStore({ api, target: { kind: 'team', id: ids.team }, sessionId: h.getSnapshot().sessionId }), (x) => x.status === 'ready')
+    const reloaded = createAgnoStore({ api, target: { kind: 'team', id: ids.team }, sessionId: h.getSnapshot().sessionId })
+    const back = await until(reloaded, (x) => x.status === 'ready')
     expect(back.runs[0]!.members).toHaveLength(1)
-    t.destroy(); h.destroy()
+    t.destroy(); h.destroy(); reloaded.destroy()
   })
 
   test('workflow: steps; HITL step confirmed through step_requirements', async () => {

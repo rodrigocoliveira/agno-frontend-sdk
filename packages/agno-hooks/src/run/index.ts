@@ -27,10 +27,14 @@ export function fromRow<K extends Kind>(kind: K, row: RunRowLike): RunOf<K> {
   }
 }
 
-/** Session rows → runs, oldest first. Team rows are grouped (members nested). */
+/**
+ * Session rows → runs, oldest first. Team rows are grouped (members nested); for every other kind a row
+ * with a `parent_run_id` is someone else's child — a workflow step's executor agent run, say — and never a
+ * top-level run of this session.
+ */
 export function rowsToRuns<K extends Kind>(kind: K, rows: RunRowLike[]): RunOf<K>[] {
   if (kind === 'team') return groupTeamRows(rows) as RunOf<K>[]
-  return rows.map((r) => fromRow(kind, r)).sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
+  return rows.filter((r) => !r.parent_run_id).map((r) => fromRow(kind, r)).sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
 }
 
 export * from './agent'

@@ -83,5 +83,9 @@ describe('dispatcher', () => {
     const rows = [{ run_id: 'b', agent_id: 'a', status: 'COMPLETED', created_at: 2 }, { run_id: 'a', agent_id: 'a', status: 'COMPLETED', created_at: 1 }]
     expect(rowsToRuns('agent', rows).map((r) => r.id)).toEqual(['a', 'b'])
     expect(rowsToRuns('team', [{ run_id: 'm', agent_id: 'a', parent_run_id: 't1', status: 'COMPLETED' }, { run_id: 't1', team_id: 't', status: 'COMPLETED' }])[0]!.members).toHaveLength(1)
+    // Only a team nests child rows: a step executor's agent run is never a top-level run of the session.
+    const child = { run_id: 'x1', agent_id: 'a', parent_run_id: 'w1', status: 'COMPLETED' }
+    expect(rowsToRuns('workflow', [{ run_id: 'w1', workflow_id: 'wf', status: 'COMPLETED' }, child])).toHaveLength(1)
+    expect(rowsToRuns('agent', [{ run_id: 'w1', agent_id: 'a', status: 'COMPLETED' }, child])).toHaveLength(1)
   })
 })

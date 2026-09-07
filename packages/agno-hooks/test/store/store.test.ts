@@ -47,6 +47,15 @@ describe('hydrate', () => {
     expect(s.isBusy).toBe(true)
   })
 
+  test('a 404 for a session with no runs is empty; any other 404 is an error', async () => {
+    const m404 = (detail: string) => mockFetch(() => json({ detail }, 404))
+    const empty = await until(agentStore(m404('Session not found or has no runs').fetch, { sessionId: 's1' }), (s) => s.status === 'ready')
+    expect(empty.runs).toEqual([])
+    expect(empty.error).toBeNull()
+    const bad = await until(agentStore(m404('Not Found').fetch, { sessionId: 's1' }), (s) => s.status === 'error')
+    expect(bad.error?.message).toBe('Not Found')
+  })
+
   test('team rows are grouped; sessionless store is ready immediately; hydrate failure is exposed', async () => {
     const m = mockFetch((call) => {
       if (call.url.includes('/sessions/s1/runs')) return json([
@@ -173,6 +182,27 @@ describe('send', () => {
     await expect(store.send('hi')).rejects.toThrow('Session is still loading')
     await until(store, (s) => s.status === 'ready')
     expect(store.getSnapshot().runs).toHaveLength(0)
+  })
+})
+
+describe('settle from the run row', () => {
+  // A background workflow that pauses closes its stream before `WorkflowPaused` is published; the same
+  // shape is reproduced here with an agent stream that ends right after `RunStarted`.
+  test('a stream ending on a still-running run takes the row, keeping local, input and cancellability', async () => {
+    const tool = { tool_call_id: 'c1', tool_name: 'add_one', tool_args: { x: 41 }, requires_confirmation: true }
+    const m = mockFetch((call) => {
+      if (call.url.includes('/cancel')) return json({ ok: true })
+      if (call.url.endsWith('/agents/a/runs')) return frames([started('r1')])
+      if (call.url.includes('/agents/a/runs/r1')) return json({ run_id: 'r1', agent_id: 'a', status: 'PAUSED', run_input: 'ignored', tools: [tool], requirements: [{ id: 'q', tool_execution: tool }] })
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch)
+    await store.send('hi')
+    const s = store.getSnapshot()
+    expect(s.runs[0]).toMatchObject({ id: 'r1', status: 'paused', local: true, input: { message: 'hi' } })
+    expect(s.pending).toMatchObject({ runId: 'r1', tools: [tool] })
+    await store.cancel()
+    expect(m.calls.at(-1)!.url).toContain('/agents/a/runs/r1/cancel')
   })
 })
 
