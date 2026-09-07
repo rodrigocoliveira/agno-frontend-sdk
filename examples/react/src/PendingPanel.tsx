@@ -9,7 +9,23 @@ export function PendingPanel({ tools, onContinue, onResolve }: {
 }) {
   const [draft, setDraft] = useState<Record<string, ToolExecution>>({})
   const decide = (t: ToolExecution) => setDraft((d) => ({ ...d, [t.tool_call_id]: t }))
-  const missing = tools.filter((t) => isToolPending(t) && !draft[t.tool_call_id] && t.approval_type !== 'required')
+  // ask_user: build on the draft, not on the pristine tool, so answers to several questions accumulate;
+  // multi_select toggles a label, single-select replaces the answer.
+  const pick = (t: ToolExecution, question: string, label: string, multi: boolean) => {
+    const base = draft[t.tool_call_id] ?? t
+    const current = base.user_feedback_schema?.find((q) => q.question === question)?.selected_options ?? []
+    const next = multi ? (current.includes(label) ? current.filter((l) => l !== label) : [...current, label]) : [label]
+    decide(provideUserFeedback(base, { [question]: next }))
+  }
+  const selected = (t: ToolExecution, question: string, label: string) =>
+    (draft[t.tool_call_id]?.user_feedback_schema?.find((q) => q.question === question)?.selected_options ?? []).includes(label)
+  // a feedback tool is decided only when every question has an answer
+  const isDecided = (t: ToolExecution) => {
+    const d = draft[t.tool_call_id]
+    if (!d) return false
+    return d.user_feedback_schema ? d.user_feedback_schema.every((q) => (q.selected_options?.length ?? 0) > 0) : true
+  }
+  const missing = tools.filter((t) => isToolPending(t) && !isDecided(t) && t.approval_type !== 'required')
   return (
     <div className="pending">
       {tools.map((t) => (
@@ -20,7 +36,7 @@ export function PendingPanel({ tools, onContinue, onResolve }: {
             <div key={q.question}>
               <p>{q.header && <b>{q.header} · </b>}{q.question}</p>
               {q.options?.map((o) => (
-                <button key={o.label} onClick={() => decide(provideUserFeedback(t, { [q.question]: [o.label] }))} title={o.description ?? ''}>{o.label}</button>
+                <button key={o.label} className={selected(t, q.question, o.label) ? 'active' : ''} onClick={() => pick(t, q.question, o.label, !!q.multi_select)} title={o.description ?? ''}>{o.label}</button>
               ))}
             </div>
           ))}
@@ -34,11 +50,11 @@ export function PendingPanel({ tools, onContinue, onResolve }: {
             <p>Run <code>{JSON.stringify(t.tool_args)}</code>? <button onClick={() => decide(confirm(t))}>yes</button> <button onClick={() => decide(reject(t))}>no</button></p>
           )}
           {t.external_execution_required && !t.result && <p>Needs a result: <button onClick={() => onResolve(t.tool_call_id, prompt('result') ?? '')}>provide</button></p>}
-          {draft[t.tool_call_id] && <span className="chip">decided</span>}
+          {isDecided(t) && <span className="chip">decided</span>}
           {t.external_execution_required && t.result && <span className="chip">resolved</span>}
         </div>
       ))}
-      <button disabled={missing.length > 0} onClick={() => void onContinue(Object.values(draft)).then(() => setDraft({}))}>continue</button>
+      <button disabled={missing.length > 0} onClick={() => void onContinue(Object.values(draft).filter(isDecided)).then(() => setDraft({}))}>continue</button>
     </div>
   )
 }
