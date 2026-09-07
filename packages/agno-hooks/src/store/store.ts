@@ -179,6 +179,12 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
         delays: options.retryDelays,
       })
       await settleFromRow(id, ac)
+      // A create stream that closed before its RunStarted never gave the run a real id: nothing can
+      // settle, resume or cancel it, so it must not stay `running` (that would block `send` forever).
+      const after = current()
+      if (after && isLocalId(after.id) && after.status === 'running' && streams.get(id) === ac && !destroyed) {
+        replace(id, { ...after, status: 'error', error: 'Stream ended before the run started' }); commit()
+      }
     } catch (err) {
       const run = current()
       if (run && !destroyed) { replace(id, spec.onFail(run, err)); commit() }

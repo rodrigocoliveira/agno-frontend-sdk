@@ -140,6 +140,19 @@ describe('send', () => {
     expect(store.getSnapshot().runs[0]!.input.files).toHaveLength(1)
   })
 
+  test('a stream that closes before RunStarted ends the local run as an error, not stuck running', async () => {
+    const empty = openSse()
+    const m = mockFetch(() => empty.response)
+    const store = agentStore(m.fetch)
+    const p = store.send('hi')
+    await until(store, () => m.calls.length === 1)
+    empty.close()
+    await p
+    expect(store.getSnapshot().runs[0]).toMatchObject({ id: 'local-1', status: 'error', error: 'Stream ended before the run started' })
+    expect(store.getSnapshot().isBusy).toBe(false)
+    expect(m.calls).toHaveLength(1) // no settle GET, no resume for a run without an id
+  })
+
   test('HTTP error before the stream opens → run error, no resume', async () => {
     const m = mockFetch(() => json({ detail: 'Agent not found' }, 404))
     const store = agentStore(m.fetch)
