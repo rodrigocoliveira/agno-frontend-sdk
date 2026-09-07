@@ -203,7 +203,7 @@ import os
 PORT = int(os.environ.get("AGNO_PORT", "7777"))
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
 JWT_SECRET = os.environ.get("JWT_SECRET", "demo-secret-change-me")
 WEB_ORIGIN = os.environ.get("WEB_ORIGIN", "http://localhost:5173")
 ```
@@ -379,8 +379,8 @@ every feature of `@rodrigocoliveira/agno-hooks`. Pair it with [`examples/demo-re
 cd examples/demo-agentos
 uv sync
 OPENAI_API_KEY=sk-... uv run python server.py     # OpenAI
-# or, with no key, a local Ollama model (needs tool calling: llama3.1, qwen2.5, ...)
-ollama pull llama3.1 && uv run python server.py
+# or, with no key, a local Ollama model (needs tool calling: llama3.2, qwen2.5, ...)
+ollama pull llama3.2 && uv run python server.py
 ```
 
 Then print the tokens and import them in the web app (Settings → Import):
@@ -394,7 +394,7 @@ uv run python tokens.py
 | `AGNO_PORT` | `7777` | port |
 | `OPENAI_API_KEY` | – | when set, OpenAI is used |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model id |
-| `OLLAMA_MODEL` | `llama3.1` | Ollama model id (used when no OpenAI key) |
+| `OLLAMA_MODEL` | `llama3.2` | Ollama model id (used when no OpenAI key) |
 | `JWT_SECRET` | `demo-secret-change-me` | HS256 secret shared by `server.py` and `tokens.py` |
 | `WEB_ORIGIN` | `http://localhost:5173` | CORS origin of demo-react |
 
