@@ -163,6 +163,17 @@ describe('send', () => {
     await store.resume('r1')
     expect(store.getSnapshot().runs[0]).toMatchObject({ status: 'completed', content: 'late' })
   })
+
+  test('rejects while the session is still loading', async () => {
+    const m = mockFetch(async (call) => {
+      if (call.url.includes('/sessions/s1/runs')) { await wait(30); return json([]) }
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch, { sessionId: 's1' })
+    await expect(store.send('hi')).rejects.toThrow('Session is still loading')
+    await until(store, (s) => s.status === 'ready')
+    expect(store.getSnapshot().runs).toHaveLength(0)
+  })
 })
 
 describe('cancel / destroy / subscribe', () => {
@@ -179,6 +190,34 @@ describe('cancel / destroy / subscribe', () => {
     live.push({ event: 'RunCancelled', run_id: 'r1', reason: 'user', event_index: 1 }); live.close()
     await p
     expect(store.getSnapshot().runs[0]).toMatchObject({ status: 'cancelled', error: 'user' })
+  })
+
+  test('a failed cancel request lands in run.error and never rejects', async () => {
+    const live = openSse()
+    const m = mockFetch((call) => (call.url.includes('/cancel') ? json({ detail: 'nope' }, 500) : live.response))
+    const store = agentStore(m.fetch)
+    const p = store.send('hi')
+    await until(store, () => m.calls.length === 1)
+    live.push(started('r1'))
+    await until(store, (s) => s.runs[0]!.id === 'r1')
+    await store.cancel()
+    expect(store.getSnapshot().runs[0]).toMatchObject({ status: 'running', error: expect.stringContaining('nope') })
+    live.push({ event: 'RunCancelled', run_id: 'r1', reason: 'user', event_index: 1 }); live.close()
+    await p
+  })
+
+  test('resume is a no-op while a stream for that run is open', async () => {
+    const live = openSse()
+    const m = mockFetch(() => live.response)
+    const store = agentStore(m.fetch)
+    const p = store.send('hi')
+    await until(store, () => m.calls.length === 1)
+    live.push(started('r1'))
+    await until(store, (s) => s.runs[0]!.id === 'r1')
+    await store.resume('r1')
+    expect(m.calls).toHaveLength(1)
+    live.push(completed('r1', 'hello', 1)); live.close()
+    await p
   })
 
   test('cancel falls back to a local cancel after the timeout', async () => {

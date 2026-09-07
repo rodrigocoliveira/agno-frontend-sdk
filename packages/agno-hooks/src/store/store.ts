@@ -111,7 +111,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
           if (!sessionId && next.sessionId) sessionId = next.sessionId
           if (isTerminal(next.status)) resolutions.delete(next.id)
           commit()
-          if (!wasPaused && next.status === 'paused') void autoRunTools(next.id)
+          if (!wasPaused && next.status === 'paused') void autoRunTools(next.id).catch(() => {})
         },
         getIndex: () => current()?.eventIndex ?? null,
         isDone: () => isTerminal(current()?.status),
@@ -154,6 +154,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
 
   async function send(input: string | SendInput<K>): Promise<void> {
     if (destroyed) throw new Error('Store destroyed')
+    if (status === 'loading') throw new Error('Session is still loading')
     if (snapshot.isBusy) throw new Error('A run is already active')
     const body = (typeof input === 'string' ? { message: input } : input) as Record<string, unknown>
     const id = `local-${++localSeq}`
@@ -170,6 +171,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   }
 
   async function resume(runId: string): Promise<void> {
+    if (streams.has(runId)) return
     const run = find(runId)
     if (!run || run.status === 'completed' || run.status === 'cancelled' || isLocalId(run.id)) return
     replace(runId, { ...run, status: 'running', error: null }); commit()
@@ -183,7 +185,13 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   async function cancel(runId?: string): Promise<void> {
     const run = runId ? find(runId) : [...runs].reverse().find((r) => r.local && !isTerminal(r.status))
     if (!run || isTerminal(run.status) || isLocalId(run.id)) return
-    await routes.cancel(run.id, sessionId)
+    try {
+      await routes.cancel(run.id, sessionId)
+    } catch (err) {
+      const r = find(run.id)
+      if (r) { replace(run.id, { ...r, error: messageOf(err) }); commit() }
+      return
+    }
     const timer = setTimeout(() => {
       const r = find(run.id)
       if (!r || isTerminal(r.status) || destroyed) return
