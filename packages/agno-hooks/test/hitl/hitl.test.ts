@@ -49,11 +49,24 @@ describe('decision helpers return new objects in Agno vocabulary', () => {
     expect(out.answered).toBe(true)
     expect(out.user_input_schema).toEqual([{ name: 'city', value: 'SP' }, { name: 'age', field_type: 'int' }])
   })
-  test('provideUserFeedback fills selected_options by question', () => {
+  test('provideUserFeedback fills selected_options by index', () => {
     const f = base({ requires_user_input: true, user_feedback_schema: [{ question: 'Where?', options: [{ label: 'A' }, { label: 'B' }] }] })
-    const out = provideUserFeedback(f, { 'Where?': ['B'] })
+    const out = provideUserFeedback(f, 0, ['B'])
     expect(out.answered).toBe(true)
     expect(out.user_feedback_schema![0]!.selected_options).toEqual(['B'])
+  })
+  test('provideUserFeedback: two questions with identical (even blank) text stay independent', () => {
+    const f = base({
+      requires_user_input: true,
+      user_feedback_schema: [
+        { question: '', header: 'Activities', multi_select: true, options: [{ label: 'Hiking' }, { label: 'Beach' }] },
+        { question: '', header: 'Budget', options: [{ label: 'Low' }, { label: 'Medium' }] },
+      ],
+    })
+    const afterFirst = provideUserFeedback(f, 0, ['Hiking', 'Beach'])
+    const out = provideUserFeedback(afterFirst, 1, ['Medium'])
+    expect(out.user_feedback_schema![0]!.selected_options).toEqual(['Hiking', 'Beach'])
+    expect(out.user_feedback_schema![1]!.selected_options).toEqual(['Medium'])
   })
   test('setExternalResult keeps strings and JSON-encodes everything else', () => {
     const e = base({ external_execution_required: true })

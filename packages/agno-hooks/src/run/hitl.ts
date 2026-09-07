@@ -27,11 +27,14 @@ export function provideUserInput(t: ToolExecution, values: Record<string, unknow
   return { ...t, answered: true, user_input_schema: schema }
 }
 
-/** `selections`: question text → selected option labels. */
-export function provideUserFeedback(t: ToolExecution, selections: Record<string, string[]>): ToolExecution {
-  const schema = (t.user_feedback_schema ?? []).map((q) =>
-    q.question in selections ? { ...q, selected_options: selections[q.question] ?? [] } : q,
-  )
+/**
+ * Sets `selected_options` on the question at `index` — its position in `user_feedback_schema`, not its
+ * `question` text. The LLM authors `question` freely (agno's `AskUserQuestion` puts no uniqueness
+ * constraint on it, and a weak model can even leave it blank for every question), so two questions in the
+ * same `ask_user` call can share the same text; keying by text would then answer both at once.
+ */
+export function provideUserFeedback(t: ToolExecution, index: number, selected: string[]): ToolExecution {
+  const schema = (t.user_feedback_schema ?? []).map((q, i) => (i === index ? { ...q, selected_options: selected } : q))
   return { ...t, answered: true, user_feedback_schema: schema }
 }
 

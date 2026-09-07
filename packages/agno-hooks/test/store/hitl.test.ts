@@ -28,7 +28,7 @@ describe('continue', () => {
     expect(s.isBusy).toBe(true)
     await expect(store.continue([confirm(confirmTool)])).rejects.toThrow('Tool c2 still pending')
     expect(m.calls).toHaveLength(1)
-    await store.continue([confirm(confirmTool), provideUserFeedback(askTool, { 'Where?': ['Trail'] })], { additional_instructions: 'be brief' })
+    await store.continue([confirm(confirmTool), provideUserFeedback(askTool, 0, ['Trail'])], { additional_instructions: 'be brief' })
     const call = m.calls[1]!
     expect(call.url).toContain('/agents/a/runs/r1/continue')
     const tools = JSON.parse(bodyParam(call, 'tools')!)

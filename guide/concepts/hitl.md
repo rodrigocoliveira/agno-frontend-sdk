@@ -26,7 +26,7 @@ once.
 |---|---|---|
 | `requires_confirmation: true` | `confirmed: true/false` | `confirm(tool)` / `reject(tool, note?)` |
 | `requires_user_input: true`, `user_input_schema` | filled-in field values | `provideUserInput(tool, values)` |
-| `user_feedback_schema` (the native `ask_user` tool) | selected option labels per question | `provideUserFeedback(tool, selections)` |
+| `user_feedback_schema` (the native `ask_user` tool) | selected option labels per question | `provideUserFeedback(tool, index, selected)` |
 | `external_execution_required: true` | a `result` | `resolveTool(id, result)` or an auto-run `frontendTools` entry, then `runTools()` |
 | `approval_type: 'required'` | nothing from this client | an admin resolves it out of band, then `continue([])` |
 

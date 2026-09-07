@@ -403,18 +403,17 @@ Builds a decided `ToolExecution` for a `requires_user_input` pause: fills each f
 ### `provideUserFeedback`
 
 ```ts
-/** `selections`: question text → selected option labels. */
-export function provideUserFeedback(t: ToolExecution, selections: Record<string, string[]>): ToolExecution {
-  const schema = (t.user_feedback_schema ?? []).map((q) =>
-    q.question in selections ? { ...q, selected_options: selections[q.question] ?? [] } : q,
-  )
+export function provideUserFeedback(t: ToolExecution, index: number, selected: string[]): ToolExecution {
+  const schema = (t.user_feedback_schema ?? []).map((q, i) => (i === index ? { ...q, selected_options: selected } : q))
   return { ...t, answered: true, user_feedback_schema: schema }
 }
 ```
 
-Builds a decided `ToolExecution` for a native `ask_user` pause: `selections` maps each question's
-text to the selected option labels; the matching `user_feedback_schema` entries get
-`selected_options` set and the execution is marked `answered: true`.
+Builds a decided `ToolExecution` for a native `ask_user` pause: sets `selected_options` on the
+question at `index` (its position in `user_feedback_schema`) and marks the execution
+`answered: true`. Addressed by position, not by the question's `question` text — the LLM authors
+that text freely, so two questions in the same call can end up with the same (even blank) text,
+and a text-keyed lookup would then answer both at once.
 
 ### `setExternalResult`
 
