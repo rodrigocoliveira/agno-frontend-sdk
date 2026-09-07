@@ -6,6 +6,9 @@
   "scripts": {
     "generate": "bun run --filter '@rodrigocoliveira/agno-api' generate",
     "agentos": "bun run --filter agentos-e2e dev",
+    "demo:server": "bun run --filter demo-agentos dev",
+    "demo:tokens": "bun run --filter demo-agentos tokens",
+    "demo:web": "bun run --filter demo-react dev",
     "typecheck": "bun run --filter './packages/*' typecheck",
     "build": "bun run --filter '@rodrigocoliveira/agno-api' build && bun run --filter '@rodrigocoliveira/agno-hooks' build",
     "test": "bun run --filter './packages/*' test",
