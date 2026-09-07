@@ -12,7 +12,7 @@ production-shaped app, not a mock.
 as a peer:
 
 ```bash
-// packages/agno-hooks/README.md
+# packages/agno-hooks/README.md
 bun add @rodrigocoliveira/agno-hooks @rodrigocoliveira/agno-api react
 ```
 
@@ -22,7 +22,7 @@ bun add @rodrigocoliveira/agno-hooks @rodrigocoliveira/agno-api react
 every feature of `@rodrigocoliveira/agno-hooks`.
 
 ```bash
-// examples/demo-agentos/README.md
+# examples/demo-agentos/README.md
 cd examples/demo-agentos
 uv sync
 OPENAI_API_KEY=sk-... uv run python server.py     # OpenAI
@@ -34,7 +34,7 @@ Auth is JWT (HS256) with per-user isolation. Print the three demo tokens (`admin
 `user-2`) so you have something to paste into the web app in a moment:
 
 ```bash
-// examples/demo-agentos/README.md
+# examples/demo-agentos/README.md
 uv run python tokens.py
 ```
 
