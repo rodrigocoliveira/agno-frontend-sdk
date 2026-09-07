@@ -135,6 +135,33 @@ describe('AgnoProvider + useAgnoAgent', () => {
     expect(reg.get('kept', () => fake)).toBe(kept)
   })
 
+  test('a fresh entry survives a commit deferred by one full tick (the react-router startTransition case)', async () => {
+    const reg = createRegistry()
+    let destroyed = 0
+    const fake = { destroy: () => destroyed++ } as unknown as AgnoStore<'agent'>
+    const entry = reg.get('k', () => fake)
+    // Simulate a commit (and its retaining layout effect) that lands one full macrotask tick late —
+    // exactly what a react-router `startTransition`-wrapped navigation does. A single setTimeout(0)
+    // disposal would have already fired by the time this runs; two chained ticks give it room.
+    await new Promise((r) => setTimeout(r, 0))
+    reg.retain(entry)
+    await new Promise((r) => setTimeout(r, 5))
+    expect(destroyed).toBe(0)
+  })
+
+  test('the retain effect runs as a layout effect: send does not reject as destroyed right after mount', async () => {
+    const m = mockFetch((call) => call.url.endsWith('/agents/a/runs')
+      ? frames([{ event: 'RunStarted', run_id: 'r1', session_id: 's1' } as AnyEvent, { event: 'RunCompleted', run_id: 'r1', content: 'ok' } as AnyEvent])
+      : json({}, 404))
+    let store: AgnoStore<'agent'> | undefined
+    render(<AgnoProvider api={apiWith(m.fetch)}><Chat onStore={(s) => (store = s)} /></AgnoProvider>)
+    // Only a microtask elapses here, no macrotask (the registry's setTimeout(0) disposal chain) has had
+    // a chance to fire — this can only pass if `useAgnoStore` already retained the entry synchronously
+    // during the commit phase, i.e. via useLayoutEffect rather than a later, separate useEffect task.
+    await Promise.resolve()
+    await act(async () => { await expect(store!.send('hi')).resolves.toBeUndefined() })
+  })
+
   test('a new-chat component mounting next to a rekeyed one does not steal its ref', async () => {
     const m = mockFetch((call) => {
       if (call.url.endsWith('/agents/a/runs')) return frames([{ event: 'RunStarted', run_id: 'r9', session_id: 'new-9', event_index: 0 } as AnyEvent, { event: 'RunCompleted', run_id: 'r9', content: 'fresh', event_index: 1 } as AnyEvent])
