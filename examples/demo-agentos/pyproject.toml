@@ -1,0 +1,17 @@
+[project]
+name = "demo-agentos"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "agno==3.0.6",
+  "fastapi",
+  "uvicorn",
+  "python-multipart",
+  "sqlalchemy",
+  "pyjwt",
+  "openai",
+  "ollama",
+]
+
+[tool.uv]
+package = false

@@ -1,0 +1,8 @@
+{
+  "name": "demo-agentos",
+  "private": true,
+  "scripts": {
+    "dev": "uv run --python 3.12 python server.py",
+    "tokens": "uv run --python 3.12 python tokens.py"
+  }
+}
