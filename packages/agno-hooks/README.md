@@ -18,7 +18,7 @@ import { AgnoProvider } from '@rodrigocoliveira/agno-hooks'
 </AgnoProvider>
 ```
 
-`AgnoProviderProps` are exactly `AgnoApiConfig` from `agno-api` (`baseUrl`, `token`, `onTokenExpired`, `params`, `headers`, `fetch`), plus an optional `api` for an instance you already built (a mocked `fetch` in tests, or an app that also uses `agno-api` outside React) — pass either `baseUrl` or `api`. The provider builds `AgnoApi` once; `token` is read on every request, so rotating it never recreates the client. One `<AgnoProvider>` is one connection; hooks with different targets share it, and multiple providers can coexist. `useAgnoApi()` returns the underlying `AgnoApi` for direct calls (sidebar, approvals, knowledge...).
+`AgnoProviderProps` are exactly `AgnoApiConfig` from `agno-api` (`baseUrl`, `token`, `onTokenExpired`, `params`, `headers`, `fetch`), plus an optional `api` for an instance you already built (a mocked `fetch` in tests, or an app that also uses `agno-api` outside React) — pass either `baseUrl` or `api`. The provider builds `AgnoApi` once; `token` is read on every request, so rotating it never recreates the client. One `<AgnoProvider>` is one connection; hooks with different targets share it, and multiple providers can coexist. `useAgnoApi()` returns the underlying `AgnoApi` for direct calls (sidebar, approvals, knowledge...). The `api` and `fetch` props must be stable references — an inline `createAgnoApi(...)` or an inline `fetch` wrapper is a new value on every render, which rebuilds the client and recreates every store under it.
 
 ## Chat with an agent
 
@@ -72,7 +72,9 @@ if (run.status === 'error' && run.error === 'Connection lost') {
 }
 ```
 
-`chat.resume(runId)` picks a dropped stream back up from where it left off. `chat.cancel(runId?)` asks the server to cancel (omit `runId` to cancel the active local run); it never rejects — a failed cancel request is recorded as `run.error`, not thrown.
+`background` is read once, when the store is created: changing the prop after mount has no effect until the store is recreated (a new target or `sessionId`).
+
+`chat.resume(runId)` picks a dropped stream back up from where it left off; a resume with no recorded event index replays the run from its first event, so the store clears the run's streamed state first and lets the replay rebuild it. `chat.cancel(runId?)` asks the server to cancel (omit `runId` to cancel the active local run); it never rejects — a failed cancel request is recorded as `run.error`, not thrown.
 
 ## Human in the loop
 
@@ -100,6 +102,8 @@ if (isToolPending(tool)) {
 
 `chat.continue(decisions, extra?)` sends the decided tools (agent), `RunRequirement`s (team) or `StepRequirement`s (workflow) back to the server, merged with anything already recorded via `resolveTool` or `frontendTools`. It rejects locally — without a request — if a pending item has no decision and no recorded resolution (`Error('Tool <id> still pending')` / `Error('Step <id> still pending')`); a tool with `approval_type: 'required'` is the exception, since the admin resolves it out of band.
 
+A continue the server refuses with a 409 "Retry without background" (a paused run with no durable queue ticket) is re-sent immediately in the foreground, and that stream does not reconnect — if it drops, the run ends `status: 'error'` with `error: 'Connection lost'` and needs `chat.resume(run.id)`.
+
 Admin approvals: a tool with `approval_type: 'required'` keeps `approval_id` for a separate approvals UI ([#5](https://github.com/rodrigocoliveira/agno-frontend-sdk/issues/5) — out of scope for 1.0). Calling `chat.continue([])` while it is still pending gets a 403 back from the server; the run stays `paused` with `run.error` describing it. Once the admin resolves the approval, call `chat.continue([])` again and the run proceeds.
 
 ## Frontend tools
@@ -114,6 +118,8 @@ useAgnoAgent({
 ```
 
 When a run pauses from a **live stream event** (not from hydrating history), every pending tool with `external_execution_required` whose `tool_name` is in `frontendTools` runs automatically, in parallel; a thrown error becomes `{ tool_call_error: true, result: <message> }` for that tool instead of failing the run. If every pending tool ends up resolved this way, the store calls `continue([])` on its own; otherwise the remaining ones stay in `chat.pending` for the app to complete with `resolveTool` or `continue(decisions)`.
+
+Components that resolve to the same store (same target and `sessionId`) share one `frontendTools` map: the last one rendered wins, so give the map to a single component rather than passing a different one from each sharer.
 
 Hydrated `PAUSED` runs — the ones found on load, possibly minutes or hours old — do **not** auto-run `frontendTools`: a hidden side effect from an old pause on a page refresh would be surprising. Call `chat.runTools(runId?)` (omitting `runId` runs the current `chat.pending` run) to run the mapped tools on it explicitly. `chat.resolveTool(toolCallId, result)` only records a resolution in the store without calling `continue`.
 

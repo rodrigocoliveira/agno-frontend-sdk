@@ -84,6 +84,16 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
 
   const failRun = (run: RunOf<K>, err: unknown): RunOf<K> => ({ ...run, status: 'error', error: messageOf(err) })
 
+  /**
+   * A stream opened without `last_event_index` replays the run from its very first event, so whatever the
+   * run row already held would be appended to (a checkpointing agent shows its content twice). Re-seed the
+   * run with only what a replay cannot rebuild — its identity and the input the caller gave — and let the
+   * events rebuild content, reasoning, tools, requirements, media, citations, metrics, members and steps.
+   */
+  const reseedForReplay = (run: RunOf<K>): RunOf<K> => createRun(kind, targetId, {
+    id: run.id, sessionId: run.sessionId, input: run.input, createdAt: run.createdAt, local: run.local, raw: run.raw,
+  } as Partial<RunOf<K>>)
+
   /** The events that prove the server took a continue; the first one applies `onAccepted`. */
   const ACCEPTED = new Set(['RunContinued', 'TeamRunContinued', 'StepContinued'])
 
@@ -94,6 +104,8 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     onFail: (run: RunOf<K>, err: unknown) => RunOf<K>
     /** Applied once, to the run produced by the first event of `ACCEPTED`. */
     onAccepted?: (run: RunOf<K>) => RunOf<K>
+    /** `first` opens with no `last_event_index`, so it replays the run from event 0. */
+    replaysFromStart?: boolean
   }
 
   /**
@@ -135,16 +147,22 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     const current = () => find(id)
     const canResume = typeof spec.resumable === 'function' ? spec.resumable : () => spec.resumable === true
     let onAccepted = spec.onAccepted
+    // Consumed by the first event of every connection that starts the replay over from event 0.
+    let reseedPending = spec.replaysFromStart === true
     try {
       await runStream({
         first: () => spec.first(ac.signal),
-        resume: (idx) => (isLocalId(id) || !canResume()
-          ? null
-          : routes.resume(id, { session_id: sessionId ?? undefined, last_event_index: idx ?? undefined }, { signal: ac.signal })),
+        resume: (idx) => {
+          if (isLocalId(id) || !canResume()) return null
+          if (idx == null) reseedPending = true
+          return routes.resume(id, { session_id: sessionId ?? undefined, last_event_index: idx ?? undefined }, { signal: ac.signal })
+        },
         onEvent: (ev) => {
-          const run = current()
-          if (!run) return
-          const wasPaused = run.status === 'paused'
+          const found = current()
+          if (!found) return
+          const wasPaused = found.status === 'paused'
+          const run = reseedPending ? reseedForReplay(found) : found
+          reseedPending = false
           let next = applyEvent(run, ev)
           if (onAccepted && ACCEPTED.has(ev.event)) { next = onAccepted(next); onAccepted = undefined }
           if (typeof ev.event_index === 'number') next = { ...next, eventIndex: ev.event_index }
@@ -199,6 +217,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
         void startStream(r.id, {
           first: (signal) => routes.resume(r.id, { session_id: sessionId ?? undefined }, { signal }),
           resumable: true,
+          replaysFromStart: true,
           onFail: failRun,
         })
       }
@@ -230,10 +249,13 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     if (streams.has(runId)) return
     const run = find(runId)
     if (!run || run.status === 'completed' || run.status === 'cancelled' || isLocalId(run.id)) return
-    replace(runId, { ...run, status: 'running', error: null }); commit()
+    // `local` is what `cancel()` and `isBusy` look for: a run this client is actively driving, whether it
+    // was created here or picked up from history.
+    replace(runId, { ...run, status: 'running', error: null, local: true }); commit()
     await startStream(runId, {
       first: (signal) => routes.resume(runId, { session_id: sessionId ?? undefined, last_event_index: run.eventIndex ?? undefined }, { signal }),
       resumable: true,
+      replaysFromStart: run.eventIndex == null,
       onFail: failRun,
     })
   }
@@ -277,6 +299,25 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     return orig ? { ...orig, tool_execution: t } : { id: t.tool_call_id, tool_execution: t }
   }
 
+  /**
+   * Files the submitted executions back into the run: into `members[member_run_id].tools` for the team
+   * decisions that came from a member's requirement, into the run's own `tools` for everything else
+   * (including a member id the run never saw, so no decision is dropped).
+   */
+  function mergeSubmitted(r: RunOf<K>, submitted: ToolExecution[], memberOf: Map<string, string>): RunOf<K> {
+    const team = asRun(r).kind === 'team' ? (r as unknown as TeamRun) : null
+    let members = team?.members ?? []
+    let tools = r.tools
+    for (const t of submitted) {
+      const mid = memberOf.get(t.tool_call_id)
+      const i = mid == null || !team ? -1 : members.findIndex((m) => m.id === mid)
+      if (i === -1) { tools = upsertTool(tools, t); continue }
+      members = members.slice()
+      members[i] = { ...members[i]!, tools: upsertTool(members[i]!.tools, t) }
+    }
+    return (team ? { ...r, tools, members } : { ...r, tools }) as RunOf<K>
+  }
+
   async function continueRun(decisions: Decision<K>[], extra?: ContinueExtra<K>): Promise<void> {
     if (destroyed) throw new Error('Store destroyed')
     const p = snapshot.pending
@@ -303,10 +344,22 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
       submitted = final
       wire = kind === 'agent' ? { tools: final } : { requirements: final.map((t) => wrapRequirement(run, t)) }
     }
+    // A team pause is a member's pause: the requirement says which member run the execution belongs to, and
+    // that is where the answered execution has to land — the team's own `tools` never held it.
+    const memberOf = new Map<string, string>()
+    if (run.kind === 'team') {
+      for (const t of submitted) {
+        const orig = run.requirements?.find((q) => q.tool_execution?.tool_call_id === t.tool_call_id)
+        const mid = (orig as { member_run_id?: unknown } | undefined)?.member_run_id
+        if (typeof mid === 'string' && mid !== '') memberOf.set(t.tool_call_id, mid)
+      }
+    }
     // The decisions stay out of the run until the server accepts them: a rejected continue must leave the
     // pause exactly as it was (a merged `confirmed: true` empties `pendingTools` and strands the run).
     const before = find(run.id)!
-    replace(run.id, { ...before, status: 'running', error: null }); commit()
+    // A continue is this client driving the run, hydrated or not: `local` is what `isBusy` and `cancel()`
+    // look for while the continue stream is open.
+    replace(run.id, { ...before, status: 'running', error: null, local: true }); commit()
     const body = { ...wire, ...(extra ?? {}), session_id: sessionId ?? undefined, stream: true }
     let downgraded = false
     await startStream(run.id, {
@@ -326,7 +379,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
       // AgentOS answers a background continue with a `RunCompleted` that carries no `tools`, so the run
       // would keep the unanswered executions from `RunPaused`. Once the server has taken the continue, the
       // decisions we sent are the truth until it sends its own list back.
-      onAccepted: submitted.length === 0 ? undefined : (r) => ({ ...r, tools: submitted.reduce(upsertTool, r.tools) }),
+      onAccepted: submitted.length === 0 ? undefined : (r) => mergeSubmitted(r, submitted, memberOf),
       onFail: (r, err) => (isAgnoApiError(err) ? { ...r, status: 'paused', error: messageOf(err) } : failRun(r, err)),
     })
   }

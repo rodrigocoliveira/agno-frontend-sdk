@@ -111,11 +111,28 @@ describe('AgnoProvider + useAgnoAgent', () => {
     const moved = reg.get('old', () => fake)
     reg.retain(moved); reg.rekey(moved, 'new')
     expect(reg.get('new', () => fake)).toBe(moved)
+    // `fresh` is retained right away: an entry nobody retains is disposed on the next tick (below).
     const fresh = reg.get('old', () => fake)
+    reg.retain(fresh)
     expect(fresh).not.toBe(moved)
     reg.release(moved)
     await new Promise((r) => setTimeout(r, 5))
     expect(destroyed).toBe(2)
+  })
+
+  test('a store created in a render that never retained it is disposed on the next tick', async () => {
+    const reg = createRegistry()
+    let destroyed = 0
+    const fake = { destroy: () => destroyed++ } as unknown as AgnoStore<'agent'>
+    reg.get('abandoned', () => fake)
+    await new Promise((r) => setTimeout(r, 5))
+    expect(destroyed).toBe(1)
+
+    const kept = reg.get('kept', () => fake)
+    reg.retain(kept)
+    await new Promise((r) => setTimeout(r, 5))
+    expect(destroyed).toBe(1)
+    expect(reg.get('kept', () => fake)).toBe(kept)
   })
 
   test('a new-chat component mounting next to a rekeyed one does not steal its ref', async () => {

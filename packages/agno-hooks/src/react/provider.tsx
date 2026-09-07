@@ -16,6 +16,7 @@ interface Entry { key: string; readonly store: AnyStore; refs: number; timer: Re
 
 export interface Registry {
   /** The entry filed under `key`, or a new one (ref count 0) holding `create()`. Does not change the ref count. */
+  /** A new entry is armed for the same next-tick disposal as `release`, so a store built in an abandoned render does not leak. */
   get(key: string, create: () => AnyStore): RegistryEntry
   retain(entry: RegistryEntry): void
   /** When the count reaches zero, destroys on the next tick unless retained again (StrictMode mount/unmount/mount). */
@@ -33,10 +34,22 @@ export function createRegistry(): Registry {
     const e = entry as Entry
     return e && entries.get(e.key) === e ? e : null
   }
+  // Destroys the entry on the next tick unless someone retains it first (StrictMode mount/unmount/mount,
+  // and a render that never committed).
+  const schedule = (e: Entry) => {
+    if (e.timer) return
+    e.timer = setTimeout(() => {
+      e.timer = null
+      if (e.refs !== 0 || entries.get(e.key) !== e) return
+      entries.delete(e.key); e.store.destroy()
+    }, 0)
+  }
   return {
     get(key, create) {
       let e = entries.get(key)
-      if (!e) { e = { key, store: create(), refs: 0, timer: null }; entries.set(key, e) }
+      // A store built in a render React then threw away is never retained, so creating one arms the same
+      // disposal `release` uses; the hook's retain effect cancels it.
+      if (!e) { e = { key, store: create(), refs: 0, timer: null }; entries.set(key, e); schedule(e) }
       return e
     },
     retain(entry) {
@@ -47,13 +60,7 @@ export function createRegistry(): Registry {
     release(entry) {
       const e = live(entry); if (!e) return
       e.refs = Math.max(0, e.refs - 1)
-      if (e.refs === 0 && !e.timer) {
-        e.timer = setTimeout(() => {
-          e.timer = null
-          if (e.refs !== 0 || entries.get(e.key) !== e) return
-          entries.delete(e.key); e.store.destroy()
-        }, 0)
-      }
+      if (e.refs === 0) schedule(e)
     },
     rekey(entry, newKey) {
       const e = live(entry); if (!e || e.key === newKey || entries.has(newKey)) return

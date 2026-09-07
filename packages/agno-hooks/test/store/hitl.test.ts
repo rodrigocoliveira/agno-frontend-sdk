@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { confirm, provideUserFeedback } from '../../src/run/hitl'
 import { createAgnoStore, type StoreOptions } from '../../src/store/store'
 import type { AnyEvent } from '../../src/types'
-import { apiWith, bodyParam, frames, json, mockFetch, until, wait } from './helpers'
+import { apiWith, bodyParam, frames, json, mockFetch, openSse, until, wait } from './helpers'
 
 const started = (run_id: string, extra: Record<string, unknown> = {}): AnyEvent => ({ event: 'RunStarted', run_id, session_id: 's1', agent_id: 'a', event_index: 0, ...extra })
 const confirmTool = { tool_call_id: 'c1', tool_name: 'add_one', tool_args: { x: 1 }, requires_confirmation: true }
@@ -43,12 +43,16 @@ describe('continue', () => {
     expect(done.isBusy).toBe(false)
   })
 
-  test('team: decisions are wrapped in the original requirement', async () => {
+  test('team: decisions are wrapped in the original requirement and land on the member run', async () => {
     const memberTool = { ...confirmTool, tool_call_id: 'm1' }
     const req = { id: 'req-1', tool_execution: memberTool, member_agent_id: 'agent', member_run_id: 'mr1' }
     const m = mockFetch((call) => call.url.endsWith('/continue')
       ? frames([{ event: 'TeamRunContinued', run_id: 't1' }, { event: 'TeamRunCompleted', run_id: 't1', content: 'ok' }])
-      : frames([{ event: 'TeamRunStarted', run_id: 't1', session_id: 's1' }, { event: 'TeamRunPaused', run_id: 't1', tools: [], requirements: [req] }]))
+      : frames([
+        { event: 'TeamRunStarted', run_id: 't1', session_id: 's1' },
+        { event: 'RunStarted', run_id: 'mr1', parent_run_id: 't1', agent_id: 'agent', session_id: 's1' },
+        { event: 'TeamRunPaused', run_id: 't1', tools: [], requirements: [req] },
+      ]))
     const store = createAgnoStore({ api: apiWith(m.fetch), target: { kind: 'team', id: 'team' } })
     await store.send('hi')
     expect(store.getSnapshot().pending!.tools).toEqual([memberTool])
@@ -56,6 +60,11 @@ describe('continue', () => {
     const reqs = JSON.parse(bodyParam(m.calls[1]!, 'requirements')!)
     expect(reqs[0]).toMatchObject({ id: 'req-1', member_run_id: 'mr1', tool_execution: { tool_call_id: 'm1', confirmed: true } })
     expect(bodyParam(m.calls[1]!, 'tools')).toBeNull()
+    // The pause was the member's, so the answered execution belongs to the member run, not to the team.
+    const run = store.getSnapshot().runs[0]!
+    expect(run.members[0]!.id).toBe('mr1')
+    expect(run.members[0]!.tools[0]).toMatchObject({ tool_call_id: 'm1', confirmed: true })
+    expect(run.tools.map((t) => t.tool_call_id)).not.toContain('m1')
   })
 
   test('workflow: step_requirements; only the last one must be decided', async () => {
@@ -163,6 +172,31 @@ describe('frontendTools', () => {
     await store.runTools()
     await until(store, (s) => s.runs[0]!.status === 'completed')
     expect(calls).toBe(1)
+  })
+
+  test('continuing a hydrated PAUSED run makes it busy and cancellable', async () => {
+    const live = openSse()
+    const row = { run_id: 'r1', agent_id: 'a', status: 'PAUSED', tools: [confirmTool], requirements: [{ id: 'q', tool_execution: confirmTool }] }
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([row])
+      if (call.url.includes('/cancel')) return json({ ok: true })
+      if (call.url.endsWith('/continue')) return live.response
+      if (call.url.includes('/agents/a/runs/r1')) return json(row)
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch, { sessionId: 's1' })
+    await until(store, (s) => s.status === 'ready')
+    const p = store.continue([confirm(confirmTool)])
+    await until(store, (s) => s.runs[0]!.status === 'running')
+    // The run came from history, but this client is driving it now.
+    expect(store.getSnapshot().isBusy).toBe(true)
+    await store.cancel()
+    expect(m.calls.at(-1)!.url).toContain('/agents/a/runs/r1/cancel')
+    live.push({ event: 'RunContinued', run_id: 'r1' })
+    live.push({ event: 'RunCompleted', run_id: 'r1', content: 'done' })
+    live.close()
+    await p
+    expect(store.getSnapshot().runs[0]!.status).toBe('completed')
   })
 
   test('setFrontendTools swaps the map used at the next pause', async () => {

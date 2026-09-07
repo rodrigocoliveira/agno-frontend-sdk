@@ -34,6 +34,34 @@ describe('hydrate', () => {
     expect(done.runs[0]).toBe(s.runs[0]) // untouched run keeps its reference
   })
 
+  test('a reattach without last_event_index replays from zero onto an empty run, not onto the row', async () => {
+    const live = openSse()
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([
+        { run_id: 'r1', agent_id: 'a', status: 'RUNNING', run_input: 'one two three', content: 'Echo: one two' },
+      ])
+      if (call.url.endsWith('/runs/r1/resume')) return live.response
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch, { sessionId: 's1' })
+    await until(store, (s) => s.status === 'ready')
+    expect(store.getSnapshot().runs[0]!.content).toBe('Echo: one two')
+    await until(store, () => m.calls.some((c) => c.url.endsWith('/runs/r1/resume')))
+    expect(bodyParam(m.calls.at(-1)!, 'last_event_index')).toBeNull()
+    live.push(started('r1'))
+    live.push(content('r1', 'Echo: ', 1))
+    live.push(content('r1', 'one two ', 2))
+    live.push(content('r1', 'three', 3))
+    // Mid-replay: the row's partial content was replaced by the replay, not appended to.
+    const mid = await until(store, (s) => s.runs[0]!.eventIndex === 3)
+    expect(mid.runs[0]!.content).toBe('Echo: one two three')
+    live.push(completed('r1', 'Echo: one two three', 4))
+    live.close()
+    const done = await until(store, (s) => s.runs[0]!.status === 'completed')
+    expect(done.runs[0]!.content).toBe('Echo: one two three')
+    expect(done.runs[0]!.input.message).toBe('one two three')
+  })
+
   test('paused row is refetched through runs.get to recover requirements', async () => {
     const t = { tool_call_id: 'c1', tool_name: 'add_one', tool_args: {}, requires_confirmation: true }
     const m = mockFetch((call) => {

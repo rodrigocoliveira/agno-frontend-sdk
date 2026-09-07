@@ -7,7 +7,7 @@ export function createTeamRun(teamId: string, over: Partial<TeamRun> = {}): Team
 }
 
 export function applyTeamEvent(run: TeamRun, ev: AnyEvent): TeamRun {
-  // A member's event: same run id as one of ours, or parented to this team run.
+  // A member's event: a run id other than this team run's, carrying this team run as its parent.
   if (typeof ev.run_id === 'string' && ev.run_id !== run.id && ev.parent_run_id === run.id) {
     const i = run.members.findIndex((m) => m.id === ev.run_id)
     const current = i === -1
