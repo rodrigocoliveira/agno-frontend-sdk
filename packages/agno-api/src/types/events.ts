@@ -1,4 +1,4 @@
-import type { RunRequirement, ToolExecution } from './hitl'
+import type { RunRequirement, StepRequirement, ToolExecution } from './hitl'
 import type { RunStatus } from './run'
 
 export interface RunEventBase {
@@ -15,6 +15,12 @@ export interface RunEventBase {
   workflow_id?: string | null
   workflow_name?: string | null
   parent_run_id?: string | null
+  /** Set on executor events inside a workflow stream (the step's agent/team run). */
+  workflow_run_id?: string | null
+  step_id?: string | null
+  step_name?: string | null
+  step_index?: number | string | null
+  nested_depth?: number | null
 }
 
 // ---- Agents (35) ----
@@ -39,6 +45,17 @@ interface CompletedFields extends ContentFields {
 }
 interface ErrorFields { error?: string | null; content?: string | null }
 interface PausedFields { tools?: ToolExecution[] | null; requirements?: RunRequirement[] | null }
+interface WorkflowPausedFields {
+  status?: RunStatus
+  paused_step_index?: number | null
+  paused_step_name?: string | null
+  pause_kind?: 'step' | 'executor' | (string & {}) | null
+  step_requirements?: StepRequirement[] | null
+  step_results?: unknown[] | null
+  step_executor_runs?: unknown[] | null
+  content?: unknown
+  metadata?: Record<string, unknown> | null
+}
 interface ToolFields { tool: ToolExecution; content?: unknown }
 interface ReasoningFields { reasoning_content?: string | null; content?: unknown; content_type?: string | null }
 
@@ -121,7 +138,7 @@ interface StepFields { step_name?: string | null; step_index?: number | string |
 interface WorkflowEventFields {
   WorkflowCompleted: CompletedFields & { step_results?: unknown[] | null }
   WorkflowError: ErrorFields
-  WorkflowPaused: PausedFields & { step_results?: unknown[] | null }
+  WorkflowPaused: WorkflowPausedFields
   WorkflowCancelled: { reason?: string | null }
   StepStarted: StepFields
   StepCompleted: StepFields & { step_response?: unknown }

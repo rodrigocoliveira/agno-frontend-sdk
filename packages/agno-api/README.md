@@ -2,7 +2,7 @@
 
 Typed, stateless client for the [AgentOS v3](https://docs.agno.com) API — every one of its 125 operations, generated from the OpenAPI spec and hand-checked against the wire contract. Runs in the browser and in Node; the only runtime dependencies are `fetch`, `FormData` and `ReadableStream`.
 
-Out of scope on purpose: no state, no cache, no message store, no React hooks, no retry beyond the 401 token refresh, no UI components. Those live in `@rodrigocoliveira/agno-chat`.
+Out of scope on purpose: no state, no cache, no message store, no React hooks, no retry beyond the 401 token refresh, no UI components. Those live in `@rodrigocoliveira/agno-hooks`.
 
 ## Install
 

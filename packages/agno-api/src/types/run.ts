@@ -1,5 +1,5 @@
 import type { components } from '../generated/openapi'
-import type { RunRequirement, ToolExecution } from './hitl'
+import type { RunRequirement, StepRequirement, ToolExecution } from './hitl'
 
 export type RunStatus = components['schemas']['RunStatus'] // 'PENDING' | 'RUNNING' | 'COMPLETED' | 'PAUSED' | 'CANCELLED' | 'ERROR' | 'REGENERATED'
 
@@ -48,6 +48,7 @@ export interface RunOutput {
   events?: Record<string, unknown>[] | null
   status: RunStatus
   queue_attempt?: number | null
+  /** Present on GET .../runs/{run_id} (RunOutput.to_dict). NOT present on GET /sessions/{id}/runs (RunSchema drops it) — fetch the run to recover a paused team member's requirement. */
   requirements?: RunRequirement[] | null
   last_checkpoint_at_message_index?: number | null
   forked_from_run_id?: string | null
@@ -68,4 +69,8 @@ export interface WorkflowRunOutput extends RunOutput {
   workflow_name?: string | null
   step_results?: unknown[] | null
   step_executor_runs?: (RunOutput | TeamRunOutput)[] | null
+  step_requirements?: StepRequirement[] | null
+  pause_kind?: 'step' | 'executor' | (string & {}) | null
+  paused_step_index?: number | null
+  paused_step_name?: string | null
 }
