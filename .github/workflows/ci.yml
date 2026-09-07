@@ -15,7 +15,7 @@ jobs:
       - name: Generated files are up to date
         run: bun run generate && git diff --exit-code -- packages/agno-api/src/generated
       - run: bun run typecheck
-      - run: bun test packages
+      - run: bun run test
       - run: bun run build
 
   e2e:
