@@ -226,7 +226,11 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     try {
       const loaded = await Promise.all(rowsToRuns(kind, rows).map(async (r) => {
         if (r.status !== 'paused') return r
-        const fresh = fromRow(kind, await routes.get(r.id, sessionId))
+        // The session list drops `requirements`; the run detail has them. If that one request fails,
+        // keep the row (the pause is still visible through its tools) rather than losing the session.
+        let detail: RunRowLike
+        try { detail = await routes.get(r.id, sessionId) } catch { return r }
+        const fresh = fromRow(kind, detail)
         return (asRun(r).kind === 'team' ? { ...fresh, members: (r as TeamRun).members } : fresh) as RunOf<K>
       }))
       if (destroyed) return

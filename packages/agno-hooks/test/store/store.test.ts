@@ -84,6 +84,22 @@ describe('hydrate', () => {
     expect(bad.error?.message).toBe('Not Found')
   })
 
+  test('a failing paused-row refetch keeps the row instead of failing the whole session', async () => {
+    const t = { tool_call_id: 'c1', tool_name: 'add_one', tool_args: {}, requires_confirmation: true }
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([
+        { run_id: 'r1', agent_id: 'a', status: 'COMPLETED', content: 'fine', created_at: 1 },
+        { run_id: 'r2', agent_id: 'a', status: 'PAUSED', tools: [t], created_at: 2 },
+      ])
+      if (call.url.includes('/agents/a/runs/r2')) return json({ detail: 'pruned' }, 500)
+      throw new Error('unexpected ' + call.url)
+    })
+    const s = await until(agentStore(m.fetch, { sessionId: 's1' }), (s) => s.status === 'ready')
+    expect(s.error).toBeNull()
+    expect(s.runs.map((r) => [r.id, r.status])).toEqual([['r1', 'completed'], ['r2', 'paused']])
+    expect(s.pending).toEqual({ runId: 'r2', tools: [t] })
+  })
+
   test('team rows are grouped; sessionless store is ready immediately; hydrate failure is exposed', async () => {
     const m = mockFetch((call) => {
       if (call.url.includes('/sessions/s1/runs')) return json([
