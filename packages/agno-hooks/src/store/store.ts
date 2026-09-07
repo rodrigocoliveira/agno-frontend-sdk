@@ -124,7 +124,15 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     const run = find(id)
     if (!owns() || !run || run.status !== 'running' || isLocalId(run.id)) return
     let row: RunRowLike
-    try { row = await routes.get(run.id, sessionId) } catch { return }
+    try {
+      row = await routes.get(run.id, sessionId)
+    } catch (err) {
+      // Without the row the run would stay `running` (and block `send`) with nothing left to feed it.
+      // Surface it as an error the app can retry with resume(), which replays from the last index.
+      const cur = find(id)
+      if (owns() && cur && cur.status === 'running') { replace(id, { ...cur, status: 'error', error: messageOf(err) }); commit() }
+      return
+    }
     const current = find(id)
     // A continue (or another send) may have taken this run over while the row was in flight; that stream
     // owns the state now.

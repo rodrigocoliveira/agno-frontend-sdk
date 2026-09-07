@@ -140,6 +140,22 @@ describe('send', () => {
     expect(store.getSnapshot().runs[0]!.input.files).toHaveLength(1)
   })
 
+  test('a failed settle GET marks the run as an error instead of leaving it running', async () => {
+    const live = openSse()
+    const m = mockFetch((call) => {
+      if (call.url.endsWith('/agents/a/runs')) return live.response
+      if (call.url.includes('/agents/a/runs/r1')) return json({ detail: 'db down' }, 503)
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch)
+    const p = store.send('hi')
+    await until(store, () => m.calls.length === 1)
+    live.push(started('r1')); live.close() // clean end while still running → settle GET → 503
+    await p
+    expect(store.getSnapshot().runs[0]).toMatchObject({ id: 'r1', status: 'error', error: expect.stringContaining('db down') })
+    expect(store.getSnapshot().isBusy).toBe(false)
+  })
+
   test('a stream that closes before RunStarted ends the local run as an error, not stuck running', async () => {
     const empty = openSse()
     const m = mockFetch(() => empty.response)
