@@ -19,6 +19,8 @@ jobs:
       - run: bun run build
       - run: bun run typecheck
       - run: bun run test
+      - name: Guide excerpts match their source files
+        run: bun run check:guide-excerpts
       - run: bun run --filter demo-react typecheck && bun run --filter demo-react build
       - uses: astral-sh/setup-uv@v5
         with:
@@ -27,8 +29,10 @@ jobs:
         run: |
           cd examples/demo-agentos
           uv sync
-          uv run --python 3.12 python -c "import server; assert len(server.agent_os.agents) == 6"
+          uv run --python 3.12 python -c "import server; assert len(server.agent_os.agents) == 6 and len(server.agent_os.teams) == 3 and len(server.agent_os.workflows) == 3"
           uv run --python 3.12 python tokens.py | python3 -c "import json,sys; d=json.load(sys.stdin); assert set(d)=={'admin','user-1','user-2'}"
+      - name: catalog.ts ids match demo-agentos's registered ids
+        run: bun run check:demo-catalog
 
   e2e:
     needs: ci

@@ -12,6 +12,8 @@
     "typecheck": "bun run --filter './packages/*' typecheck",
     "build": "bun run --filter '@rodrigocoliveira/agno-api' build && bun run --filter '@rodrigocoliveira/agno-hooks' build",
     "test": "bun run --filter './packages/*' test",
+    "check:guide-excerpts": "bun run scripts/check-guide-excerpts.ts",
+    "check:demo-catalog": "bun run scripts/check-demo-catalog.ts",
     "test:e2e": "AGNO_URL=${AGNO_URL:-http://localhost:7777} bun test packages/agno-api/test/e2e packages/agno-hooks/test/e2e",
     "changeset": "changeset",
     "version": "changeset version",
