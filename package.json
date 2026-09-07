@@ -18,8 +18,5 @@
     "@changesets/cli": "^3.0.2",
     "@types/bun": "^1.4.1",
     "typescript": "^5.9.3"
-  },
-  "overrides": {
-    "@rodrigocoliveira/agno-api": "workspace:*"
   }
 }
