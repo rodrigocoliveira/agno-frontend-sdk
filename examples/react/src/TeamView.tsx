@@ -10,6 +10,7 @@ export function TeamView({ teamId, sessionId, onSession }: { teamId: string; ses
   })
   const [text, setText] = useState('')
   useEffect(() => onSession(chat.sessionId), [chat.sessionId, onSession])
+  useEffect(() => setText(''), [chat.sessionId])
   if (chat.status === 'loading') return <div className="messages">loading…</div>
   if (chat.status === 'error') return <div className="messages error">{chat.error?.message}</div>
   return (

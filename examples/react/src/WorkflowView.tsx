@@ -5,7 +5,9 @@ export function WorkflowView({ workflowId, sessionId, onSession }: { workflowId:
   const wf = useAgnoWorkflow({ workflowId, sessionId })
   const [text, setText] = useState('')
   useEffect(() => onSession(wf.sessionId), [wf.sessionId, onSession])
+  useEffect(() => setText(''), [wf.sessionId])
   if (wf.status === 'loading') return <div className="messages">loading…</div>
+  if (wf.status === 'error') return <div className="messages error">{wf.error?.message}</div>
   const active = wf.pending?.stepRequirements.at(-1)
   return (
     <>
