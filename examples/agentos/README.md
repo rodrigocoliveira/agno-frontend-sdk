@@ -21,14 +21,22 @@ The server listens on `127.0.0.1` and takes `AGNO_PORT` (default `7777`).
 
 ## What the scripted model does
 
-`ScriptedModel` looks at the last user message:
+`ScriptedModel` looks at the last user message (case-insensitive) and picks one of four scripts:
 
-- if it contains the word **"tool"**, it calls a tool (the leader agent delegates to
-  `test-agent`, which then calls `add_one`, a `requires_confirmation=True` tool) and the run
-  pauses for confirmation (HITL).
-- otherwise, it just echoes back `Echo: <message>`, streamed word by word.
+- **"ask"** -> calls `ask_user` with one question ("Where do you run?", options `Trail` / `Road`);
+  the run pauses for user feedback (`user_feedback_schema`).
+- **"locate"** -> calls `get_location`, an `external_execution=True` tool: the run pauses and the
+  frontend supplies the result.
+- **"tool"** -> calls `add_one(x=41)`, a `requires_confirmation=True` tool: the run pauses for
+  confirmation (HITL).
+- anything else -> answers `Echo: <message>`, streamed word by word.
 
-Registered ids: agent `test-agent`, team `test-team`, workflow `test-workflow`.
+A team leader always delegates to `test-agent` first (so the same triggers fire on the member), and
+after any tool result the answer is `Done after tool.`
+
+Registered ids: agent `test-agent`, team `test-team`, workflows `test-workflow` and
+`test-workflow-hitl` (its single step `echo` carries `HumanReview(requires_confirmation=True)`, so
+the workflow pauses on `step_requirements` before running).
 
 ## Run the E2E suite against it
 

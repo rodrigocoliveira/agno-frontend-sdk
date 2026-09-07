@@ -1,8 +1,13 @@
 """ScriptedModel: a deterministic agno Model with no API key.
 
-Rules (looked up from the last user message):
-- contains "tool"  -> call the first available tool once, then answer "Done after tool."
-- otherwise        -> answer "Echo: <message>" (streamed word by word)
+Rules (looked up from the last user message, case-insensitive):
+- contains "ask"    -> call `ask_user` with one question ("Where do you run?", options Trail/Road)
+- contains "locate" -> call `get_location` (an external_execution tool: the frontend runs it)
+- contains "tool"   -> call `add_one(x=41)` (a requires_confirmation tool)
+- otherwise         -> answer "Echo: <message>" (streamed word by word)
+
+A team leader (a model that sees `delegate_task_to_member`) always delegates to
+`delegate_to` first. After any tool result the answer is "Done after tool."
 """
 import json
 import uuid
@@ -24,13 +29,22 @@ class ScriptedModel(Model):
     def _plan(self, messages: List[Message], tools: Optional[List[dict]]):
         last_user = next((m for m in reversed(messages) if m.role == "user"), None)
         text = str(last_user.content) if last_user and last_user.content else ""
+        low = text.lower()
         has_tool_result = any(m.role == "tool" for m in messages)
         names = [(t.get("function") or t).get("name") for t in (tools or [])]
         if "delegate_task_to_member" in names and not has_tool_result:
             return "tool", ("delegate_task_to_member", {"member_id": self.delegate_to, "task": text})
-        if tools and not has_tool_result and "tool" in text.lower():
-            fn = next(n for n in names if n != "delegate_task_to_member")
-            return "tool", (fn, {"x": 41})
+        if tools and not has_tool_result:
+            if "ask" in low and "ask_user" in names:
+                return "tool", ("ask_user", {"questions": [{
+                    "header": "Use", "question": "Where do you run?",
+                    "options": [{"label": "Trail", "description": "Off road"}, {"label": "Road"}], "multi_select": False,
+                }]})
+            if "locate" in low and "get_location" in names:
+                return "tool", ("get_location", {})
+            if "tool" in low:
+                fn = "add_one" if "add_one" in names else next(n for n in names if n != "delegate_task_to_member")
+                return "tool", (fn, {"x": 41})
         return "text", ("Done after tool." if has_tool_result else f"Echo: {text}")
 
     def _tool_call(self, call) -> dict:

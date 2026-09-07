@@ -1,5 +1,6 @@
 import { isAgnoApiError, type AgnoApi, type RunRequirement, type StepRequirement, type ToolExecution } from '@rodrigocoliveira/agno-api'
-import { applyEvent, createRun, fromRow, pendingTools, rowsToRuns, setExternalResult } from '../run'
+import { applyEvent, createRun, fromRow, pendingTools, reconcileSteps, rowsToRuns, setExternalResult } from '../run'
+import { upsertTool } from '../run/base'
 import {
   isTerminal, type AgentRun, type AnyEvent, type ContinueExtra, type Decision, type FrontendTool, type Kind, type Pending,
   type Run, type RunOf, type RunRowLike, type SendInput, type Snapshot, type Target, type TeamRun, type WorkflowRun,
@@ -89,6 +90,36 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     onFail: (run: RunOf<K>, err: unknown) => RunOf<K>
   }
 
+  /**
+   * AgentOS can close a background SSE stream before the pause reaches the client: a background workflow
+   * that pauses streams `StepPaused` and then ends, and its `WorkflowPaused` (the frame carrying
+   * `pause_kind` and `step_requirements`) is published after the response is already closed. When a stream
+   * ends cleanly while the run still looks like it is running, take the state from the run row.
+   */
+  async function settleFromRow(id: string, ac: AbortController): Promise<void> {
+    const owns = () => streams.get(id) === ac && !destroyed && !ac.signal.aborted
+    const run = find(id)
+    if (!owns() || !run || run.status !== 'running' || isLocalId(run.id)) return
+    let row: RunRowLike
+    try { row = await routes.get(run.id, sessionId) } catch { return }
+    const current = find(id)
+    // A continue (or another send) may have taken this run over while the row was in flight; that stream
+    // owns the state now.
+    if (!owns() || !current) return
+    const fresh = fromRow(kind, row)
+    if (current.status !== 'running' || fresh.status === 'running') return
+    // The row is authoritative, but it does not carry what only the stream saw: a team's member runs, and
+    // the steps a paused workflow had already started (`step_results` holds only the finished ones).
+    const cur = asRun(current)
+    const merged = (cur.kind === 'team' ? { ...fresh, members: cur.members }
+      : cur.kind === 'workflow' ? { ...fresh, steps: reconcileSteps(cur.steps, row.step_results) }
+      : fresh) as RunOf<K>
+    replace(id, { ...merged, eventIndex: current.eventIndex })
+    if (isTerminal(merged.status)) resolutions.delete(id)
+    commit()
+    if (merged.status === 'paused') void autoRunTools(id).catch(() => {})
+  }
+
   async function startStream(runId: string, spec: StreamSpec): Promise<void> {
     let id = runId
     const ac = new AbortController()
@@ -118,6 +149,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
         signal: ac.signal,
         delays: options.retryDelays,
       })
+      await settleFromRow(id, ac)
     } catch (err) {
       const run = current()
       if (run && !destroyed) { replace(id, spec.onFail(run, err)); commit() }
@@ -129,8 +161,18 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   async function hydrate(): Promise<void> {
     if (!sessionId) { status = 'ready'; commit(); return }
     status = 'loading'; commit()
+    let rows: RunRowLike[]
     try {
-      const rows = (await options.api.sessions.runs(sessionId)) as unknown as RunRowLike[]
+      rows = (await options.api.sessions.runs(sessionId)) as unknown as RunRowLike[]
+    } catch (e) {
+      if (destroyed) return
+      // A caller-chosen session id only exists once its first run is created: until then AgentOS
+      // answers GET /sessions/{id}/runs with 404. That is an empty session, not a failure.
+      if (isAgnoApiError(e) && e.status === 404) { runs = []; status = 'ready'; error = null; commit(); return }
+      status = 'error'; error = e instanceof Error ? e : new Error(String(e)); commit()
+      return
+    }
+    try {
       const loaded = await Promise.all(rowsToRuns(kind, rows).map(async (r) => {
         if (r.status !== 'paused') return r
         const fresh = fromRow(kind, await routes.get(r.id, sessionId))
@@ -227,6 +269,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     if (!p) throw new Error('No paused run to continue')
     const run = asRun(find(p.runId)!)
     let wire: Record<string, unknown>
+    let submitted: ToolExecution[] = []
     if (run.kind === 'workflow') {
       const byStep = new Map((decisions as StepRequirement[]).map((d) => [d.step_id, d]))
       const list = ((run as WorkflowRun).stepRequirements ?? []).map((sr) => byStep.get(sr.step_id) ?? sr)
@@ -244,11 +287,26 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
         else throw new Error(`Tool ${t.tool_call_id} still pending`)
       }
       resolutions.set(run.id, res)
+      submitted = final
       wire = kind === 'agent' ? { tools: final } : { requirements: final.map((t) => wrapRequirement(run, t)) }
     }
-    replace(run.id, { ...find(run.id)!, status: 'running', error: null }); commit()
+    // AgentOS answers a background continue with a `RunCompleted` that carries no `tools`, so the run would
+    // keep the unanswered executions from `RunPaused`. The decisions we just sent are the truth until the
+    // server sends its own list back.
+    const before = find(run.id)!
+    replace(run.id, { ...before, tools: submitted.reduce(upsertTool, before.tools), status: 'running', error: null }); commit()
+    const body = { ...wire, ...(extra ?? {}), session_id: sessionId ?? undefined, stream: true }
     await startStream(run.id, {
-      first: (signal) => routes.continue(run.id, { ...wire, ...(extra ?? {}), session_id: sessionId ?? undefined, background, stream: true }, { signal }),
+      first: async function* (signal) {
+        try {
+          yield* routes.continue(run.id, { ...body, background }, { signal })
+        } catch (err) {
+          // AgentOS refuses `background=true` on a paused run with no durable queue ticket (409,
+          // "Retry without background") — a workflow paused on a plain SqliteDb is always one of these.
+          if (!background || !isAgnoApiError(err) || err.status !== 409) throw err
+          yield* routes.continue(run.id, { ...body, background: false }, { signal })
+        }
+      },
       resumable: background,
       onFail: (r, err) => (isAgnoApiError(err) ? { ...r, status: 'paused', error: messageOf(err) } : failRun(r, err)),
     })
