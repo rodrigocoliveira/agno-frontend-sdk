@@ -19,6 +19,16 @@ jobs:
       - run: bun run build
       - run: bun run typecheck
       - run: bun run test
+      - run: bun run --filter demo-react typecheck && bun run --filter demo-react build
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+      - name: demo-agentos wires up without an LLM key
+        run: |
+          cd examples/demo-agentos
+          uv sync
+          uv run --python 3.12 python -c "import server; assert len(server.agent_os.agents) == 6"
+          uv run --python 3.12 python tokens.py | python3 -c "import json,sys; d=json.load(sys.stdin); assert set(d)=={'admin','user-1','user-2'}"
 
   e2e:
     needs: ci
