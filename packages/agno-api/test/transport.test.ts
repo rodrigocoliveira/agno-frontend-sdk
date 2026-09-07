@@ -125,6 +125,14 @@ describe('request: 401 refresh', () => {
     expect(m.calls).toHaveLength(2)
   })
 
+  test('without a bearer token (cookie/header auth) the refresh is always followed by one retry', async () => {
+    let refreshed = false
+    const m = mockFetch(() => (refreshed ? json({ ok: true }) : json({ detail: 'expired' }, 401)))
+    const t = createTransport({ baseUrl: base, fetch: m.fetch, onTokenExpired: async () => { refreshed = true } })
+    expect(await t.request<{ ok: boolean }>({ method: 'get', path: '/health' })).toEqual({ ok: true })
+    expect(m.calls).toHaveLength(2)
+  })
+
   test('onTokenExpired that yields the same token → original 401, no retry', async () => {
     // token() reports the same value before and after the refresh: the token that just got the 401
     // cannot make a retry succeed, so the original 401 surfaces without a second request.

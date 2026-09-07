@@ -31,7 +31,7 @@ const api = createAgnoApi({
 ```
 
 - `token` can be a plain string or a function (sync or async); it is read on **every** request, never cached by the library.
-- `onTokenExpired` is called once per 401, even when several requests fail at the same time — the refresh is deduplicated and each of those requests is retried exactly once with the new token. If it returns a string, the returned token is used for the retry only; keep your `token` source up to date, because every later request reads `token` again. If `onTokenExpired` itself throws, the original 401 is thrown as an `AgnoApiError` with the refresh failure as its `cause`.
+- `onTokenExpired` is called once per 401, even when several requests fail at the same time — the refresh is deduplicated and each of those requests is retried exactly once with the new token. If the refresh leaves the bearer token unchanged (`token()` still reports the value that got the 401), the original 401 is thrown without a retry; with no `token` configured (cookie or header auth) the retry always happens. If it returns a string, the returned token is used for the retry only; keep your `token` source up to date, because every later request reads `token` again. If `onTokenExpired` itself throws, the original 401 is thrown as an `AgnoApiError` with the refresh failure as its `cause`.
 - `params` are global defaults merged into **any field of that name the route accepts** — query string *and* request body alike; a value passed in a specific call wins over the global one, and passing `undefined` in a call does not erase the global. A global `user_id`, for example, reaches `sessions.list` (query) as well as run creation, `sessions.create`, `memories.*` and `learnings.create` (body); a global `db_id`/`knowledge_id` reaches `knowledge.search`'s body. Keys the route declares nowhere are never sent.
 - `headers` (not shown above) are sent on every request; per-call `headers` may override `content-type` — only `authorization` and `idempotency-key` stay under the library's control.
 
@@ -144,7 +144,7 @@ try {
 
 | `status` | Meaning |
 |---|---|
-| `401` | Token expired. Without `onTokenExpired` this throws immediately; with it, the request is retried once after refresh. |
+| `401` | Token expired. Without `onTokenExpired` this throws immediately; with it, the request is retried once after refresh (skipped when the refresh left a bearer token unchanged). |
 | `403` | The authenticated `user_id` does not own the session/resource. |
 | `404` | Resource not found. |
 | `409` | Conflict — component guard, idempotency clash, or a run already in progress. |

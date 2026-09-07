@@ -97,9 +97,11 @@ export function createTransport(config: TransportConfig): Transport {
           throw Object.assign(unauthorized, { cause })
         }
       }
-      // The refresh produced nothing new: the very token that just got the 401 cannot make a retry
-      // succeed, so surface the original 401 instead of paying for an identical second request.
-      if (next === used) throw unauthorized
+      // A bearer token that just got a 401 cannot make a retry succeed: when the refresh left it
+      // unchanged, surface the original 401 instead of paying for an identical second request. Without
+      // a bearer token the credential lives elsewhere (a cookie, a header the refresh rotated), so the
+      // retry is the only way to find out whether the refresh worked.
+      if (used !== undefined && next === used) throw unauthorized
       res = await doFetch(req, accept, next)
     }
     if (!res.ok) throw await errorFromResponse(res, req.method.toUpperCase(), req.path)
