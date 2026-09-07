@@ -96,15 +96,64 @@ describe('AgnoProvider + useAgnoAgent', () => {
     const reg = createRegistry()
     let destroyed = 0
     const fake = { destroy: () => destroyed++ } as unknown as AgnoStore<'agent'>
-    expect(reg.get('k', () => fake)).toBe(fake)
-    reg.retain('k'); reg.retain('k'); reg.release('k')
+    const k = reg.get('k', () => fake)
+    expect(k.store).toBe(fake)
+    expect(reg.get('k', () => fake)).toBe(k)
+    reg.retain(k); reg.retain(k); reg.release(k)
     await new Promise((r) => setTimeout(r, 5))
     expect(destroyed).toBe(0)
-    reg.release('k')
+    reg.release(k)
     await new Promise((r) => setTimeout(r, 5))
     expect(destroyed).toBe(1)
-    reg.get('old', () => fake); reg.retain('old'); reg.rekey('old', 'new'); reg.retain('new'); reg.release('old'); reg.release('new')
+
+    // After a rekey the handle is what counts: `old` is free again, so a second get('old') builds a
+    // brand-new entry, and the rekeyed entry is still destroyed through its own handle.
+    const moved = reg.get('old', () => fake)
+    reg.retain(moved); reg.rekey(moved, 'new')
+    expect(reg.get('new', () => fake)).toBe(moved)
+    const fresh = reg.get('old', () => fake)
+    expect(fresh).not.toBe(moved)
+    reg.release(moved)
     await new Promise((r) => setTimeout(r, 5))
     expect(destroyed).toBe(2)
+  })
+
+  test('a new-chat component mounting next to a rekeyed one does not steal its ref', async () => {
+    const m = mockFetch((call) => {
+      if (call.url.endsWith('/agents/a/runs')) return frames([{ event: 'RunStarted', run_id: 'r9', session_id: 'new-9', event_index: 0 } as AnyEvent, { event: 'RunCompleted', run_id: 'r9', content: 'fresh', event_index: 1 } as AnyEvent])
+      return json({}, 404)
+    })
+    const api = apiWith(m.fetch)
+    const a: AgnoStore<'agent'>[] = []
+    const b: AgnoStore<'agent'>[] = []
+    const ui = (sessionId: string | undefined, withA: boolean, withB: boolean) => (
+      <AgnoProvider api={api}>
+        {withA ? <div data-testid="a"><Chat sessionId={sessionId} onStore={(s) => a.push(s)} /></div> : null}
+        {withB ? <div data-testid="b"><Chat sessionId={undefined} onStore={(s) => b.push(s)} /></div> : null}
+      </AgnoProvider>
+    )
+    const { getByTestId, getByText, rerender } = render(ui(undefined, true, false))
+    await act(async () => { getByText('send').click() })
+    await waitFor(() => expect(getByTestId('a').querySelector('[data-testid="session"]')!.textContent).toBe('new-9'))
+    const learned = a.at(-1)!
+
+    // A learns `new-9` and is rekeyed off `@new`; B mounts as a fresh chat on the key A just freed.
+    rerender(ui('new-9', true, true))
+    await waitFor(() => expect(b.length).toBeGreaterThan(0))
+    expect(a.at(-1)).toBe(learned)
+    expect(b.at(-1)).not.toBe(learned)
+
+    // B unmounting releases B's own entry, never A's.
+    rerender(ui('new-9', true, false))
+    await new Promise((r) => setTimeout(r, 10))
+    expect(a.at(-1)).toBe(learned)
+    expect(getByTestId('a').querySelector('[data-testid="content"]')!.textContent).toBe('fresh')
+    expect(getByTestId('a').querySelector('[data-testid="session"]')!.textContent).toBe('new-9')
+
+    // And A holds exactly one ref, not the phantom extra a stolen release would have left behind:
+    // unmounting A (provider still up) destroys its store.
+    rerender(ui('new-9', false, false))
+    await new Promise((r) => setTimeout(r, 10))
+    await expect(learned.send('again')).rejects.toThrow('Store destroyed')
   })
 })

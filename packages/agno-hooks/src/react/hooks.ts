@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { createAgnoStore, type AgnoStore } from '../store/store'
 import type { FrontendTool, Kind, Snapshot } from '../types'
-import { useAgnoContext, type Registry } from './provider'
+import { useAgnoContext, type Registry, type RegistryEntry } from './provider'
 
 export interface AgnoHook<K extends Kind> extends Snapshot<K> {
   send: AgnoStore<K>['send']
@@ -24,22 +24,25 @@ function useAgnoStore<K extends Kind>(kind: K, targetId: string, opts: CommonOpt
   const { api, registry } = useAgnoContext()
   const sessionId = opts.sessionId ?? null
   const wanted = `${kind}:${targetId}:${sessionId ?? '@new'}`
-  const ref = useRef<{ key: string; registry: Registry; store: AgnoStore<K> } | null>(null)
+  // The hook holds the entry handle, not the key: after a rekey the handle still points at the same
+  // entry, so another component claiming the freed `@new` key cannot steal this one's ref count.
+  const ref = useRef<{ key: string; registry: Registry; entry: RegistryEntry } | null>(null)
   if (!ref.current || ref.current.key !== wanted || ref.current.registry !== registry) {
     const prev = ref.current
-    const learned = prev && prev.registry === registry && prev.key === `${kind}:${targetId}:@new` && sessionId !== null && prev.store.getSnapshot().sessionId === sessionId
+    const learned = prev && prev.registry === registry && prev.key === `${kind}:${targetId}:@new` && sessionId !== null && prev.entry.store.getSnapshot().sessionId === sessionId
     if (learned) {
-      registry.rekey(prev.key, wanted)
-      ref.current = { key: wanted, registry, store: prev.store }
+      registry.rekey(prev.entry, wanted)
+      ref.current = { key: wanted, registry, entry: prev.entry }
     } else {
-      const store = registry.get(wanted, () => createAgnoStore({
+      const entry = registry.get(wanted, () => createAgnoStore({
         api, target: { kind, id: targetId }, sessionId, background: opts.background, frontendTools: opts.frontendTools,
-      })) as AgnoStore<K>
-      ref.current = { key: wanted, registry, store }
+      }))
+      ref.current = { key: wanted, registry, entry }
     }
   }
-  const store = ref.current.store
-  useEffect(() => { registry.retain(wanted); return () => registry.release(wanted) }, [registry, wanted])
+  const entry = ref.current.entry
+  const store = entry.store as AgnoStore<K>
+  useEffect(() => { registry.retain(entry); return () => registry.release(entry) }, [registry, entry])
   useEffect(() => { store.setFrontendTools(opts.frontendTools) })
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, () => SERVER_SNAPSHOT as unknown as Snapshot<K>)
   return useMemo(() => ({

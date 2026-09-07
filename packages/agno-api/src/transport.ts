@@ -97,6 +97,9 @@ export function createTransport(config: TransportConfig): Transport {
           throw Object.assign(unauthorized, { cause })
         }
       }
+      // The refresh produced nothing new: the very token that just got the 401 cannot make a retry
+      // succeed, so surface the original 401 instead of paying for an identical second request.
+      if (next === used) throw unauthorized
       res = await doFetch(req, accept, next)
     }
     if (!res.ok) throw await errorFromResponse(res, req.method.toUpperCase(), req.path)
