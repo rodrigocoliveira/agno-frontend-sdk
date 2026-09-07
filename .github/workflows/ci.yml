@@ -19,7 +19,6 @@ jobs:
       - run: bun run build
       - run: bun run typecheck
       - run: bun run test
-      - run: bun run --filter react-example build
 
   e2e:
     needs: ci
@@ -38,7 +37,7 @@ jobs:
         env:
           AGNO_PORT: 7778
         run: |
-          cd examples/agentos
+          cd e2e/agentos
           uv run --python 3.12 python server.py &
       - name: Wait for the server to be healthy
         run: |

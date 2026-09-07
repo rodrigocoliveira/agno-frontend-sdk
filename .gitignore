@@ -1,3 +1,7 @@
 reference/
 node_modules/
 dist/
+__pycache__/
+.venv/
+e2e/agentos/tmp/
+examples/demo-agentos/tmp/

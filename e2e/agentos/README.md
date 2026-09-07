@@ -1,8 +1,9 @@
-# agentos-example
+# e2e/agentos — the deterministic AgentOS fixture
 
-A minimal [AgentOS](https://docs.agno.com) `3.0.6` server used to run the SDK's E2E suite
-without any API key. It uses a `ScriptedModel` (see `scripted_model.py`) instead of a real
-LLM provider, so the whole suite runs deterministically and offline.
+This is **not an example**. It is the [AgentOS](https://docs.agno.com) `3.0.6` server the SDK's
+E2E suite runs against in CI. It uses a `ScriptedModel` (see `scripted_model.py`) instead of an LLM,
+so every run is deterministic and needs no API key. For a real server with real agents, see
+[`examples/demo-agentos`](../../examples/demo-agentos).
 
 ## Requirements
 

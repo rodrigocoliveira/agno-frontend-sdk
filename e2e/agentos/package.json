@@ -1,5 +1,5 @@
 {
-  "name": "agentos-example",
+  "name": "agentos-e2e",
   "private": true,
   "scripts": {
     "dev": "uv run --python 3.12 python server.py"

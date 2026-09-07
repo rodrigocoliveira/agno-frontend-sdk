@@ -2,11 +2,10 @@
   "name": "agno-frontend-sdk",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*", "examples/*"],
+  "workspaces": ["packages/*", "examples/*", "e2e/*"],
   "scripts": {
     "generate": "bun run --filter '@rodrigocoliveira/agno-api' generate",
-    "agentos": "bun run --filter agentos-example dev",
-    "example": "bun run --filter react-example dev",
+    "agentos": "bun run --filter agentos-e2e dev",
     "typecheck": "bun run --filter './packages/*' typecheck",
     "build": "bun run --filter '@rodrigocoliveira/agno-api' build && bun run --filter '@rodrigocoliveira/agno-hooks' build",
     "test": "bun run --filter './packages/*' test",
