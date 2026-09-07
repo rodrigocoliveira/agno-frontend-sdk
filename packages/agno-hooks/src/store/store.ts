@@ -268,7 +268,14 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
 
   async function cancel(runId?: string): Promise<void> {
     const run = runId ? find(runId) : [...runs].reverse().find((r) => r.local && !isTerminal(r.status))
-    if (!run || isTerminal(run.status) || isLocalId(run.id)) return
+    if (!run || isTerminal(run.status)) return
+    if (isLocalId(run.id)) {
+      // No RunStarted yet: the server has nothing to cancel by id, but the request is still ours to
+      // drop. Abort the stream and settle the run locally.
+      streams.get(run.id)?.abort()
+      replace(run.id, { ...run, status: 'cancelled', error: null }); commit()
+      return
+    }
     try {
       await routes.cancel(run.id, sessionId)
     } catch (err) {

@@ -291,6 +291,21 @@ describe('cancel / destroy / subscribe', () => {
     await p
   })
 
+  test('cancel before RunStarted aborts the stream and settles the run locally', async () => {
+    const live = openSse()
+    const m = mockFetch(() => live.response)
+    const store = agentStore(m.fetch)
+    const p = store.send('hi')
+    await until(store, () => m.calls.length === 1)
+    await store.cancel()
+    expect(store.getSnapshot().runs[0]).toMatchObject({ id: 'local-1', status: 'cancelled' })
+    expect(store.getSnapshot().isBusy).toBe(false)
+    expect(m.calls).toHaveLength(1) // no /cancel request: the server has no run id yet
+    live.close() // the mocked fetch ignores the abort signal; a real fetch rejects the read
+    await p
+    expect(store.getSnapshot().runs[0]!.status).toBe('cancelled')
+  })
+
   test('cancel falls back to a local cancel after the timeout', async () => {
     const live = openSse()
     const m = mockFetch((call) => (call.url.includes('/cancel') ? json({ ok: true }) : live.response))
