@@ -4,13 +4,13 @@ from agno.os import AgentOS
 
 import auth
 import settings
-from agents import chat
+from agents import approval, browser, chat, confirm, interview, tools
 from db import db
 
 agent_os = AgentOS(
     id="demo",
     name="agno-frontend-sdk demo",
-    agents=[chat.agent],
+    agents=[chat.agent, tools.agent, browser.agent, confirm.agent, interview.agent, approval.agent],
     db=db,
     authorization=True,
     authorization_config=auth.CONFIG,
