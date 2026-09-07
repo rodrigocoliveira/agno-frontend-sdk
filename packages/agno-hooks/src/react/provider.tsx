@@ -35,7 +35,8 @@ export function createRegistry(): Registry {
     return e && entries.get(e.key) === e ? e : null
   }
   // Destroys the entry on the next tick unless someone retains it first (StrictMode mount/unmount/mount,
-  // and a render that never committed).
+  // and a render that never committed). A fresh entry is retained via a layout effect (see hooks.ts)
+  // so this timer never wins the race against a real browser's passive-effect scheduling.
   const schedule = (e: Entry) => {
     if (e.timer) return
     e.timer = setTimeout(() => {

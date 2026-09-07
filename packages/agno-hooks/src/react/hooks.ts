@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { createAgnoStore, type AgnoStore } from '../store/store'
 import type { FrontendTool, Kind, Snapshot } from '../types'
 import { useAgnoContext, type Registry, type RegistryEntry } from './provider'
+
+// useLayoutEffect flushes synchronously in the browser's commit phase, before any competing
+// setTimeout(0) (e.g. the registry's disposal timer in provider.tsx's `schedule()`) can fire — a
+// plain useEffect is scheduled as a later, separate task and can lose that race. useEffect is fine
+// outside the browser (SSR has no timers racing it), so fall back to it there to avoid React's
+// "useLayoutEffect does nothing on the server" warning.
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 export interface AgnoHook<K extends Kind> extends Snapshot<K> {
   send: AgnoStore<K>['send']
@@ -42,7 +49,7 @@ function useAgnoStore<K extends Kind>(kind: K, targetId: string, opts: CommonOpt
   }
   const entry = ref.current.entry
   const store = entry.store as AgnoStore<K>
-  useEffect(() => { registry.retain(entry); return () => registry.release(entry) }, [registry, entry])
+  useIsomorphicLayoutEffect(() => { registry.retain(entry); return () => registry.release(entry) }, [registry, entry])
   useEffect(() => { store.setFrontendTools(opts.frontendTools) })
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, () => SERVER_SNAPSHOT as unknown as Snapshot<K>)
   return useMemo(() => ({
