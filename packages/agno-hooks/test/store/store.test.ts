@@ -65,12 +65,15 @@ describe('hydrate', () => {
   test('paused row is refetched through runs.get to recover requirements', async () => {
     const t = { tool_call_id: 'c1', tool_name: 'add_one', tool_args: {}, requires_confirmation: true }
     const m = mockFetch((call) => {
-      if (call.url.includes('/sessions/s1/runs')) return json([{ run_id: 'r1', agent_id: 'a', status: 'PAUSED', tools: [t] }])
-      if (call.url.includes('/agents/a/runs/r1')) return json({ run_id: 'r1', agent_id: 'a', status: 'PAUSED', tools: [t], requirements: [{ id: 'q', tool_execution: t }] })
+      if (call.url.includes('/sessions/s1/runs')) return json([{ run_id: 'r1', agent_id: 'a', status: 'PAUSED', run_input: 'what is around me', tools: [t] }])
+      // The single-run GET endpoint's real shape: no `run_input`, input nested as agno's `RunInput`
+      // dataclass (`{ input_content }`) instead of a flat string.
+      if (call.url.includes('/agents/a/runs/r1')) return json({ run_id: 'r1', agent_id: 'a', status: 'PAUSED', input: { input_content: 'what is around me' }, tools: [t], requirements: [{ id: 'q', tool_execution: t }] })
       throw new Error('unexpected ' + call.url)
     })
     const s = await until(agentStore(m.fetch, { sessionId: 's1' }), (s) => s.status === 'ready')
     expect(s.runs[0]!.requirements![0]!.id).toBe('q')
+    expect(s.runs[0]!.input.message).toBe('what is around me')
     expect(s.pending).toEqual({ runId: 'r1', tools: [t] })
     expect(s.isBusy).toBe(true)
   })
@@ -266,7 +269,9 @@ describe('settle from the run row', () => {
     const m = mockFetch((call) => {
       if (call.url.includes('/cancel')) return json({ ok: true })
       if (call.url.endsWith('/agents/a/runs')) return frames([started('r1')])
-      if (call.url.includes('/agents/a/runs/r1')) return json({ run_id: 'r1', agent_id: 'a', status: 'PAUSED', run_input: 'ignored', tools: [tool], requirements: [{ id: 'q', tool_execution: tool }] })
+      // Real single-run GET shape (no `run_input`); irrelevant to this test since settleFromRow keeps
+      // the run's own local `input`, but kept realistic anyway.
+      if (call.url.includes('/agents/a/runs/r1')) return json({ run_id: 'r1', agent_id: 'a', status: 'PAUSED', input: { input_content: 'ignored' }, tools: [tool], requirements: [{ id: 'q', tool_execution: tool }] })
       throw new Error('unexpected ' + call.url)
     })
     const store = agentStore(m.fetch)

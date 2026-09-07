@@ -24,6 +24,15 @@ export function textOf(content: unknown): string {
   return typeof content === 'string' ? content : JSON.stringify(content)
 }
 
+/** agno's `RunInput` dataclass, as returned (nested under `input`) by the single-run GET endpoints
+ *  — unlike the list endpoint's `run_input` string field, there is no flat string here. */
+export function inputContentOf(input: unknown): string | null {
+  if (input && typeof input === 'object' && typeof (input as { input_content?: unknown }).input_content === 'string') {
+    return (input as { input_content: string }).input_content
+  }
+  return null
+}
+
 export function upsertTool(tools: ToolExecution[], tool: ToolExecution): ToolExecution[] {
   const i = tools.findIndex((t) => t.tool_call_id === tool.tool_call_id)
   if (i === -1) return [...tools, tool]
@@ -97,7 +106,10 @@ export function fromBaseRow<R extends RunBase>(run: R, row: RunRowLike): R {
     sessionId: row.session_id ?? run.sessionId,
     status: fromServerStatus(row.status),
     local: false,
-    input: { message: typeof row.run_input === 'string' ? row.run_input : textOf(row.input), files: [], media: row.input_media ?? null },
+    input: {
+      message: typeof row.run_input === 'string' ? row.run_input : inputContentOf(row.input) ?? textOf(row.input),
+      files: [], media: row.input_media ?? null,
+    },
     content: textOf(row.content),
     reasoning: row.reasoning_content ?? '',
     tools: row.tools ?? [],

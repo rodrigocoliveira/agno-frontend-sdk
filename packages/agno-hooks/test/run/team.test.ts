@@ -62,4 +62,11 @@ describe('groupTeamRows / fromTeamRow', () => {
   test('fromTeamRow keeps members empty', () => {
     expect(fromTeamRow({ run_id: 't9', team_id: 'team', status: 'RUNNING' })).toMatchObject({ kind: 'team', id: 't9', status: 'running', members: [] })
   })
+  test('single-run GET shape (no run_input, input nested as RunInput) still yields plain message text', () => {
+    // Same real single-run endpoint shape confirmed live for a team: no `run_input`, input nested as
+    // agno's `RunInput` dataclass (`{ input_content }`).
+    const row = { run_id: 't2', team_id: 'team', status: 'PAUSED', input: { input_content: 'what is around me' }, tools: [], requirements: [] }
+    const r = fromTeamRow(row)
+    expect(r.input.message).toBe('what is around me')
+  })
 })
