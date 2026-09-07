@@ -1,4 +1,4 @@
-reference/
+/reference/
 node_modules/
 dist/
 __pycache__/
