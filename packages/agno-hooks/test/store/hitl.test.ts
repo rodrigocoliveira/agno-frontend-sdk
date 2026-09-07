@@ -102,6 +102,21 @@ describe('continue', () => {
     expect(done.pending).toBeNull()
   })
 
+  test('workflow: a decision only replaces the active (last) requirement, earlier same-step entries go back untouched', async () => {
+    const gate = { step_id: 'st1', step_name: 'echo', requires_confirmation: true, confirmed: true, is_post_execution: false }
+    const review = { step_id: 'st1', step_name: 'echo', requires_output_review: true, is_post_execution: true }
+    const m = mockFetch((call) => call.url.endsWith('/continue')
+      ? frames([{ event: 'StepContinued', run_id: 'w1', step_id: 'st1' }, { event: 'WorkflowCompleted', run_id: 'w1', content: 'ok' }])
+      : frames([{ event: 'WorkflowStarted', run_id: 'w1', session_id: 's1' }, { event: 'WorkflowPaused', run_id: 'w1', pause_kind: 'step', step_requirements: [gate, review] }]))
+    const store = createAgnoStore({ api: apiWith(m.fetch), target: { kind: 'workflow', id: 'wf' } })
+    await store.send('go')
+    await store.continue([{ ...review, confirmed: true }])
+    const sent = JSON.parse(bodyParam(m.calls[1]!, 'step_requirements')!)
+    expect(sent).toHaveLength(2)
+    expect(sent[0]).toEqual(gate)
+    expect(sent[1]).toMatchObject({ is_post_execution: true, confirmed: true })
+  })
+
   test('workflow paused without requirements rejects a decision instead of posting []', async () => {
     const m = mockFetch((call) => call.url.endsWith('/continue')
       ? frames([{ event: 'WorkflowCompleted', run_id: 'w1', content: 'ok' }])

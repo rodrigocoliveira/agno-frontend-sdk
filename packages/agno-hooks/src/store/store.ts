@@ -346,13 +346,17 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     if (run.kind === 'workflow') {
       const stepDecisions = (decisions as Decision<'workflow'>[]).filter((d): d is StepRequirement => 'step_id' in d)
       const toolDecisions = (decisions as Decision<'workflow'>[]).filter((d): d is ToolExecution => 'tool_call_id' in d)
-      const byStep = new Map(stepDecisions.map((d) => [d.step_id, d]))
       const reqs = (run as WorkflowRun).stepRequirements ?? []
       // A paused workflow without requirements (the WorkflowPaused frame never reached us and the row
       // carried none) has nothing a decision can attach to: say so instead of posting an empty list.
       if (reqs.length === 0 && decisions.length > 0) throw new Error('No step requirement to continue')
-      const list = reqs.map((sr) => byStep.get(sr.step_id) ?? sr)
+      // Only the LAST requirement is active (the server accumulates them across pauses, and the same
+      // step_id can appear twice: a pre-execution gate and a post-execution review). Earlier entries are
+      // history and go back untouched; a decision is matched to the active one by step_id.
+      const list = reqs.slice()
       const active = list.at(-1)
+      const decided = active ? stepDecisions.find((d) => d.step_id === active.step_id) : undefined
+      if (active && decided) list[list.length - 1] = decided
       if (active?.requires_executor_input) {
         // The step's agent/team paused: the decision lives in executor_requirements[].tool_execution.
         const res = new Map(resolutions.get(run.id) ?? [])
@@ -364,8 +368,8 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
           else if (t.approval_type === 'required') continue
           else throw new Error(`Tool ${t.tool_call_id} still pending`)
         }
-        list[list.length - 1] = resolveExecutorTools(active, final)
-      } else if (active && !byStep.has(active.step_id)) throw new Error(`Step ${active.step_id} still pending`)
+        list[list.length - 1] = resolveExecutorTools(list[list.length - 1]!, final)
+      } else if (active && !decided) throw new Error(`Step ${active.step_id} still pending`)
       wire = { step_requirements: list }
     } else {
       const res = new Map(resolutions.get(run.id) ?? [])
