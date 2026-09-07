@@ -8,7 +8,7 @@
     "agentos": "bun run --filter agentos-example dev",
     "example": "bun run --filter react-example dev",
     "typecheck": "bun run --filter './packages/*' typecheck",
-    "build": "bun run --filter './packages/*' build",
+    "build": "bun run --filter '@rodrigocoliveira/agno-api' build && bun run --filter '@rodrigocoliveira/agno-hooks' build",
     "test": "bun run --filter './packages/*' test",
     "test:e2e": "AGNO_URL=${AGNO_URL:-http://localhost:7777} bun test packages/agno-api/test/e2e packages/agno-hooks/test/e2e",
     "changeset": "changeset",
