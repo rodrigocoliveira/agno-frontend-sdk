@@ -36,13 +36,26 @@ export function createRegistry(): Registry {
   }
   // Destroys the entry on the next tick unless someone retains it first (StrictMode mount/unmount/mount,
   // and a render that never committed). A fresh entry is retained via a layout effect (see hooks.ts)
-  // so this timer never wins the race against a real browser's passive-effect scheduling.
+  // so this timer never wins the race against a real browser's passive-effect scheduling. That's not
+  // always enough margin, though: some updates (e.g. a route change under react-router's
+  // startTransition-wrapped navigation) are processed at low priority, so React can finish the render
+  // (which is when a fresh entry is requested and this timer gets armed) and then yield back to the
+  // event loop before actually committing (which is when the retaining layout effect runs) — a commit
+  // that resolves within a single tick can still arrive after a plain setTimeout(0) has already fired.
+  // Chaining two zero-delay timers gives such a deferred commit a full extra tick of margin while
+  // staying deterministic and SSR-safe (no requestAnimationFrame or other browser-only API).
   const schedule = (e: Entry) => {
     if (e.timer) return
+    // Two chained ticks, not one: a plain setTimeout(0) here can lose the race against a commit that
+    // React defers via startTransition (react-router's navigation does this — see the fix commit's
+    // changeset for the measured mechanism). retain()/release() still cancel this timer at any point
+    // while it's pending, regardless of which of the two ticks it's currently waiting on.
     e.timer = setTimeout(() => {
-      e.timer = null
-      if (e.refs !== 0 || entries.get(e.key) !== e) return
-      entries.delete(e.key); e.store.destroy()
+      e.timer = setTimeout(() => {
+        e.timer = null
+        if (e.refs !== 0 || entries.get(e.key) !== e) return
+        entries.delete(e.key); e.store.destroy()
+      }, 0)
     }, 0)
   }
   return {
