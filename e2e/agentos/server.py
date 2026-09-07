@@ -35,7 +35,10 @@ workflow_hitl = Workflow(
     id="test-workflow-hitl", name="Test Workflow HITL", db=db,
     steps=[Step(name="echo", agent=agent, human_review=HumanReview(requires_confirmation=True, confirmation_message="Run echo?"))],
 )
-agent_os = AgentOS(id="spike", agents=[agent], teams=[team], workflows=[workflow, workflow_hitl], db=db)
+agent_os = AgentOS(
+    id="spike", agents=[agent], teams=[team], workflows=[workflow, workflow_hitl], db=db,
+    cors_allowed_origins=[os.environ.get("WEB_ORIGIN", "http://localhost:5173")],
+)
 app = agent_os.get_app()
 
 if __name__ == "__main__":
