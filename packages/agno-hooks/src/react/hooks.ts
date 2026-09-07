@@ -3,10 +3,12 @@ import { createAgnoStore, type AgnoStore } from '../store/store'
 import type { FrontendTool, Kind, Snapshot } from '../types'
 import { useAgnoContext, type Registry, type RegistryEntry } from './provider'
 
-// useLayoutEffect flushes synchronously in the browser's commit phase, before any competing
-// setTimeout(0) (e.g. the registry's disposal timer in provider.tsx's `schedule()`) can fire — a
-// plain useEffect is scheduled as a later, separate task and can lose that race. useEffect is fine
-// outside the browser (SSR has no timers racing it), so fall back to it there to avoid React's
+// useLayoutEffect flushes synchronously in the browser's commit phase, before a competing
+// setTimeout(0) (e.g. the registry's disposal timer in provider.tsx's `schedule()`) fires for a
+// commit that is not itself deferred (e.g. by startTransition) — see provider.tsx's `schedule()`
+// for that case, which is why the disposal check there is chained two ticks deep, not one. A plain
+// useEffect is scheduled as a later, separate task and can lose the race outright. useEffect is
+// fine outside the browser (SSR has no timers racing it), so fall back to it there to avoid React's
 // "useLayoutEffect does nothing on the server" warning.
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
