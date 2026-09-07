@@ -74,7 +74,7 @@ describe('continue', () => {
       : frames([{ event: 'WorkflowStarted', run_id: 'w1', session_id: 's1' }, { event: 'WorkflowPaused', run_id: 'w1', pause_kind: 'step', step_requirements: [sr] }]))
     const store = createAgnoStore({ api: apiWith(m.fetch), target: { kind: 'workflow', id: 'wf' } })
     await store.send('go')
-    expect(store.getSnapshot().pending).toEqual({ runId: 'w1', stepRequirements: [sr] })
+    expect(store.getSnapshot().pending).toEqual({ runId: 'w1', stepRequirements: [sr], tools: [] })
     await expect(store.continue([])).rejects.toThrow('Step st1 still pending')
     await store.continue([{ ...sr, confirmed: true }])
     expect(JSON.parse(bodyParam(m.calls[1]!, 'step_requirements')!)[0]).toMatchObject({ step_id: 'st1', confirmed: true })
@@ -100,6 +100,24 @@ describe('continue', () => {
     expect(done.runs[0]!.status).toBe('completed')
     expect(done.runs[0]!.tools[0]!.confirmed).toBe(true)
     expect(done.pending).toBeNull()
+  })
+
+  test('workflow executor pause: pending.tools exposes the nested tools; continue re-wraps the decision', async () => {
+    const nested = { tool_call_id: 'x1', tool_name: 'add_one', tool_args: { x: 41 }, requires_confirmation: true }
+    const sr = { step_id: 'st1', step_name: 'echo', requires_executor_input: true, executor_id: 'test-agent', executor_requirements: [{ id: 'req-x1', tool_execution: nested }] }
+    const m = mockFetch((call) => call.url.endsWith('/continue')
+      ? frames([{ event: 'StepExecutorContinued', run_id: 'w1', step_id: 'st1' }, { event: 'WorkflowCompleted', run_id: 'w1', content: 'ok' }])
+      : frames([{ event: 'WorkflowStarted', run_id: 'w1', session_id: 's1' }, { event: 'WorkflowPaused', run_id: 'w1', pause_kind: 'executor', step_requirements: [sr] }]))
+    const store = createAgnoStore({ api: apiWith(m.fetch), target: { kind: 'workflow', id: 'wf' } })
+    await store.send('Use the tool')
+    const p = store.getSnapshot().pending!
+    expect(p.tools).toEqual([nested])
+    expect(store.getSnapshot().runs[0]!.pauseKind).toBe('executor')
+    await expect(store.continue([])).rejects.toThrow('Tool x1 still pending')
+    await store.continue([confirm(nested)])
+    const sent = JSON.parse(bodyParam(m.calls[1]!, 'step_requirements')!)
+    expect(sent[0].executor_requirements[0]).toMatchObject({ id: 'req-x1', tool_execution: { tool_call_id: 'x1', confirmed: true } })
+    expect(store.getSnapshot().runs[0]!.status).toBe('completed')
   })
 
   test('approval-gated tool needs no local decision; 403 keeps the run paused with error', async () => {

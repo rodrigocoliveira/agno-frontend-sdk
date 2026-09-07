@@ -1,4 +1,4 @@
-import type { RunRequirement, ToolExecution } from '@rodrigocoliveira/agno-api'
+import type { RunRequirement, StepRequirement, ToolExecution } from '@rodrigocoliveira/agno-api'
 
 /** Same rule the server uses (`RunRequirement.needs_*` in agno 3.0.6). */
 export function isToolPending(t: ToolExecution): boolean {
@@ -37,4 +37,21 @@ export function provideUserFeedback(t: ToolExecution, selections: Record<string,
 
 export function setExternalResult(t: ToolExecution, result: unknown): ToolExecution {
   return { ...t, result: typeof result === 'string' ? result : JSON.stringify(result ?? null) }
+}
+
+/** The pending ToolExecutions nested in a workflow requirement whose step executor (agent/team) paused. */
+export function executorTools(sr: StepRequirement): ToolExecution[] {
+  return (sr.executor_requirements ?? []).map((r) => r.tool_execution).filter((t): t is ToolExecution => !!t && isToolPending(t))
+}
+
+/** A copy of `sr` whose `executor_requirements[].tool_execution` are replaced by the decided ones (by tool_call_id). */
+export function resolveExecutorTools(sr: StepRequirement, decided: ToolExecution[]): StepRequirement {
+  const byId = new Map(decided.map((d) => [d.tool_call_id, d]))
+  return {
+    ...sr,
+    executor_requirements: (sr.executor_requirements ?? []).map((r) => {
+      const d = r.tool_execution ? byId.get(r.tool_execution.tool_call_id) : undefined
+      return d ? { ...r, tool_execution: d } : r
+    }),
+  }
 }

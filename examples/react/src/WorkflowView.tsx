@@ -1,5 +1,6 @@
 import { useAgnoWorkflow } from '@rodrigocoliveira/agno-hooks'
 import { useEffect, useState } from 'react'
+import { PendingPanel } from './PendingPanel'
 
 export function WorkflowView({ workflowId, sessionId, onSession }: { workflowId: string; sessionId?: string; onSession: (id: string | null) => void }) {
   const wf = useAgnoWorkflow({ workflowId, sessionId })
@@ -23,7 +24,11 @@ export function WorkflowView({ workflowId, sessionId, onSession }: { workflowId:
           </div>
         ))}
       </div>
-      {wf.pending && active && (
+      {wf.pending && wf.pending.tools.length > 0 && (
+        // the step's agent paused on a tool (pause_kind 'executor'): decide the tool, not the step
+        <PendingPanel tools={wf.pending.tools} onContinue={(d) => wf.continue(d)} onResolve={wf.resolveTool} />
+      )}
+      {wf.pending && wf.pending.tools.length === 0 && active && (
         <div className="pending">
           <div className="card">
             <strong>{active.step_name}</strong> {active.confirmation_message ?? 'needs confirmation'}

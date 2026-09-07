@@ -1,5 +1,5 @@
 import { isAgnoApiError, type AgnoApi, type RunRequirement, type StepRequirement, type ToolExecution } from '@rodrigocoliveira/agno-api'
-import { applyEvent, createRun, fromRow, pendingTools, reconcileSteps, rowsToRuns, setExternalResult } from '../run'
+import { applyEvent, createRun, executorTools, fromRow, pendingTools, reconcileSteps, resolveExecutorTools, rowsToRuns, setExternalResult } from '../run'
 import { upsertTool } from '../run/base'
 import {
   isTerminal, type AgentRun, type AnyEvent, type ContinueExtra, type Decision, type FrontendTool, type Kind, type Pending,
@@ -64,8 +64,13 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     for (let i = runs.length - 1; i >= 0; i--) {
       const r = asRun(runs[i]!)
       if (r.status !== 'paused') continue
-      if (r.kind === 'workflow') return { runId: r.id, stepRequirements: r.stepRequirements ?? [] } as Pending<K>
       const res = resolutions.get(r.id)
+      if (r.kind === 'workflow') {
+        const reqs = r.stepRequirements ?? []
+        const active = reqs.at(-1)
+        const tools = active ? executorTools(active).map((t) => res?.get(t.tool_call_id) ?? t) : []
+        return { runId: r.id, stepRequirements: reqs, tools } as Pending<K>
+      }
       return { runId: r.id, tools: pendingTools(r).map((t) => res?.get(t.tool_call_id) ?? t) } as Pending<K>
     }
     return null
@@ -339,10 +344,25 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     let wire: Record<string, unknown>
     let submitted: ToolExecution[] = []
     if (run.kind === 'workflow') {
-      const byStep = new Map((decisions as StepRequirement[]).map((d) => [d.step_id, d]))
-      const list = ((run as WorkflowRun).stepRequirements ?? []).map((sr) => byStep.get(sr.step_id) ?? sr)
+      const stepDecisions = (decisions as Decision<'workflow'>[]).filter((d): d is StepRequirement => 'step_id' in d)
+      const toolDecisions = (decisions as Decision<'workflow'>[]).filter((d): d is ToolExecution => 'tool_call_id' in d)
+      const byStep = new Map(stepDecisions.map((d) => [d.step_id, d]))
+      const reqs = (run as WorkflowRun).stepRequirements ?? []
+      const list = reqs.map((sr) => byStep.get(sr.step_id) ?? sr)
       const active = list.at(-1)
-      if (active && !byStep.has(active.step_id)) throw new Error(`Step ${active.step_id} still pending`)
+      if (active?.requires_executor_input) {
+        // The step's agent/team paused: the decision lives in executor_requirements[].tool_execution.
+        const res = new Map(resolutions.get(run.id) ?? [])
+        for (const d of toolDecisions) res.set(d.tool_call_id, d)
+        const final: ToolExecution[] = []
+        for (const t of executorTools(active)) {
+          const d = res.get(t.tool_call_id)
+          if (d) final.push(d)
+          else if (t.approval_type === 'required') continue
+          else throw new Error(`Tool ${t.tool_call_id} still pending`)
+        }
+        list[list.length - 1] = resolveExecutorTools(active, final)
+      } else if (active && !byStep.has(active.step_id)) throw new Error(`Step ${active.step_id} still pending`)
       wire = { step_requirements: list }
     } else {
       const res = new Map(resolutions.get(run.id) ?? [])

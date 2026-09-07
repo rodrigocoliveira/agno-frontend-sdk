@@ -132,12 +132,17 @@ team.pending // { runId, tools } — a member's pause surfaces here just like an
 
 const workflow = useAgnoWorkflow({ workflowId })
 workflow.runs[0]?.steps // StepRun[] — one per workflow step
-workflow.pending // { runId, stepRequirements } for a paused workflow
+workflow.pending // { runId, stepRequirements, tools } for a paused workflow
 
-await workflow.continue([{ ...workflow.pending!.stepRequirements[0]!, confirmed: true }])
+// step pause (pause_kind 'step'): decide the active (last) StepRequirement
+await workflow.continue([{ ...workflow.pending!.stepRequirements.at(-1)!, confirmed: true }])
+
+// executor pause (pause_kind 'executor'): the step's agent or team paused on a tool.
+// pending.tools lists those ToolExecutions; decide them like an agent's
+await workflow.continue(workflow.pending!.tools.map((t) => confirm(t)))
 ```
 
-`useAgnoWorkflow` has no `frontendTools` option — workflow pauses are `StepRequirement`s handled through `continue`, not `ToolExecution`s.
+`useAgnoWorkflow` has no `frontendTools` option. A step pause is a `StepRequirement` decided through `continue`; an executor pause exposes the nested `ToolExecution`s in `pending.tools` (`executorTools` / `resolveExecutorTools` do the unwrapping and re-wrapping if you build the wire yourself).
 
 ## Without React
 

@@ -74,10 +74,14 @@ export type ContinueExtra<K extends Kind> = K extends 'agent'
   ? Omit<AgentContinueInput, 'tools' | StoreOwned>
   : K extends 'team' ? Omit<TeamContinueInput, 'requirements' | StoreOwned> : Omit<WorkflowContinueInput, 'step_requirements' | StoreOwned>
 
-export type Decision<K extends Kind> = K extends 'workflow' ? StepRequirement : ToolExecution
+/** Agent/team: a decided ToolExecution. Workflow: a decided StepRequirement (step pause) or a decided
+ *  ToolExecution from the active requirement's `executor_requirements` (executor pause). */
+export type Decision<K extends Kind> = K extends 'workflow' ? StepRequirement | ToolExecution : ToolExecution
 
 export type Pending<K extends Kind> = K extends 'workflow'
-  ? { runId: string; stepRequirements: StepRequirement[] }
+  /** `tools`: the pending ToolExecutions of the ACTIVE (last) requirement when the step's agent/team
+   *  paused (`pause_kind: 'executor'`); empty for a step pause. */
+  ? { runId: string; stepRequirements: StepRequirement[]; tools: ToolExecution[] }
   : { runId: string; tools: ToolExecution[] }
 
 export interface Snapshot<K extends Kind> {

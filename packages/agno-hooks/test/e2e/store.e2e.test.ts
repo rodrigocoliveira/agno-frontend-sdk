@@ -100,6 +100,19 @@ e2e('agno-hooks store (live)', () => {
     t.destroy(); h.destroy(); reloaded.destroy()
   })
 
+  test('workflow executor pause: the step agent pauses on a tool; continue decides the nested tool', async () => {
+    const w = createAgnoStore({ api, target: { kind: 'workflow', id: ids.workflow }, sessionId: uid() })
+    await until(w, (x) => x.status === 'ready')
+    await w.send('Use the tool that needs confirmation.')
+    const p = w.getSnapshot().pending!
+    expect(w.getSnapshot().runs[0]!.pauseKind).toBe('executor')
+    expect(p.tools[0]).toMatchObject({ tool_name: 'add_one', requires_confirmation: true })
+    await w.continue([confirm(p.tools[0]!)])
+    await until(w, (x) => x.runs[0]!.status === 'completed', 10000)
+    expect(w.getSnapshot().pending).toBeNull()
+    w.destroy()
+  })
+
   test('workflow: steps; HITL step confirmed through step_requirements', async () => {
     const w = createAgnoStore({ api, target: { kind: 'workflow', id: ids.workflow }, sessionId: uid() })
     await until(w, (x) => x.status === 'ready')
