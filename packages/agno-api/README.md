@@ -4,6 +4,8 @@ Typed, stateless client for the [AgentOS v3](https://docs.agno.com) API — ever
 
 Out of scope on purpose: no state, no cache, no message store, no React hooks, no retry beyond the 401 token refresh, no UI components. Those live in `@rodrigocoliveira/agno-hooks`.
 
+Full documentation lives in [`guide/`](../../guide) — see [`guide/reference/agno-api.md`](../../guide/reference/agno-api.md).
+
 ## Install
 
 ```bash

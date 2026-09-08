@@ -46,7 +46,7 @@ e2e('agno-hooks store (live)', () => {
     const t = s.getSnapshot().pending!.tools[0]!
     expect(t.tool_name).toBe('ask_user')
     expect(t.user_feedback_schema![0]!.options!.map((o) => o.label)).toEqual(['Trail', 'Road'])
-    await s.continue([provideUserFeedback(t, { 'Where do you run?': ['Trail'] })])
+    await s.continue([provideUserFeedback(t, 0, ['Trail'])])
     const done = s.getSnapshot().runs[0]!
     expect(done.status).toBe('completed')
     expect(done.tools[0]!.user_feedback_schema![0]!.selected_options).toEqual(['Trail'])

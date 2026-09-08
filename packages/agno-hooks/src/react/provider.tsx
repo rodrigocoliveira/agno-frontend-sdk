@@ -16,10 +16,10 @@ interface Entry { key: string; readonly store: AnyStore; refs: number; timer: Re
 
 export interface Registry {
   /** The entry filed under `key`, or a new one (ref count 0) holding `create()`. Does not change the ref count. */
-  /** A new entry is armed for the same next-tick disposal as `release`, so a store built in an abandoned render does not leak. */
+  /** A new entry is armed for the same two-chained-ticks disposal as `release`, so a store built in an abandoned render does not leak. */
   get(key: string, create: () => AnyStore): RegistryEntry
   retain(entry: RegistryEntry): void
-  /** When the count reaches zero, destroys on the next tick unless retained again (StrictMode mount/unmount/mount). */
+  /** When the count reaches zero, destroys after two chained ticks unless retained again (StrictMode mount/unmount/mount). */
   release(entry: RegistryEntry): void
   /** Moves the entry to `newKey`; a no-op when `newKey` is already taken by another entry. */
   rekey(entry: RegistryEntry, newKey: string): void
@@ -34,14 +34,26 @@ export function createRegistry(): Registry {
     const e = entry as Entry
     return e && entries.get(e.key) === e ? e : null
   }
-  // Destroys the entry on the next tick unless someone retains it first (StrictMode mount/unmount/mount,
-  // and a render that never committed).
+  // Destroys the entry after two chained ticks unless someone retains it first (StrictMode mount/unmount/mount,
+  // and a render that never committed). A fresh entry is retained via a layout effect (see hooks.ts)
+  // so this timer never wins the race against a real browser's passive-effect scheduling. That's not
+  // always enough margin, though: some updates (e.g. a route change under react-router's
+  // startTransition-wrapped navigation) are processed at low priority, so React can finish the render
+  // (which is when a fresh entry is requested and this timer gets armed) and then yield back to the
+  // event loop before actually committing (which is when the retaining layout effect runs) — a commit
+  // that resolves within a single tick can still arrive after a plain setTimeout(0) has already fired.
+  // Chaining two zero-delay timers gives such a deferred commit a full extra tick of margin while
+  // staying deterministic and SSR-safe (no requestAnimationFrame or other browser-only API).
   const schedule = (e: Entry) => {
     if (e.timer) return
+    // Two chained ticks — see the comment above (fixed in 49d5815). retain()/release() still cancel this
+    // timer at any point while it's pending, regardless of which of the two ticks it's currently waiting on.
     e.timer = setTimeout(() => {
-      e.timer = null
-      if (e.refs !== 0 || entries.get(e.key) !== e) return
-      entries.delete(e.key); e.store.destroy()
+      e.timer = setTimeout(() => {
+        e.timer = null
+        if (e.refs !== 0 || entries.get(e.key) !== e) return
+        entries.delete(e.key); e.store.destroy()
+      }, 0)
     }, 0)
   }
   return {

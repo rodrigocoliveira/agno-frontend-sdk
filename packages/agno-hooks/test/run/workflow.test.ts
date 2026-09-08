@@ -59,7 +59,9 @@ describe('applyWorkflowEvent', () => {
 
 describe('fromWorkflowRow', () => {
   test('steps from step_results; paused fields', () => {
-    const row = { run_id: 'w1', workflow_id: 'wf', status: 'PAUSED', run_input: 'hi', content: null, step_results: [result], step_requirements: [{ step_id: 'st1', requires_confirmation: true }], pause_kind: 'step', created_at: '2026-09-06T00:00:00Z' }
+    // Shaped like the single-run GET endpoint's real response: no `run_input`, input nested as agno's
+    // `RunInput` dataclass (`{ input_content }`) — the list endpoint is the only one with a flat `run_input`.
+    const row = { run_id: 'w1', workflow_id: 'wf', status: 'PAUSED', input: { input_content: 'hi' }, content: null, step_results: [result], step_requirements: [{ step_id: 'st1', requires_confirmation: true }], pause_kind: 'step', created_at: '2026-09-06T00:00:00Z' }
     const run = fromWorkflowRow(row)
     expect(run).toMatchObject({ kind: 'workflow', workflowId: 'wf', status: 'paused', pauseKind: 'step', input: { message: 'hi' } })
     expect(run.steps[0]).toMatchObject({ id: 'st1', name: 'echo', content: 'Echo: hi ', executorRunId: 'x1', status: 'completed' })

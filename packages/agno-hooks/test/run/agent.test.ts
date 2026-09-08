@@ -93,4 +93,12 @@ describe('fromAgentRow', () => {
     expect(r.content).toBe('{"a":1}')
     expect(r.requirements).toBeNull()
   })
+  test('single-run GET shape (no run_input, input nested as RunInput) still yields plain message text', () => {
+    // The list endpoint (GET /sessions/{id}/runs) returns a flat `run_input` string. The single-run GET
+    // endpoint used to refetch a PAUSED row for its requirements has no `run_input` at all — instead the
+    // input is agno's `RunInput` dataclass, nested as `input: { input_content }`.
+    const row = { run_id: 'r3', agent_id: 'a', status: 'PAUSED', input: { input_content: 'what is around me' }, tools: [], requirements: [] }
+    const r = fromAgentRow(row)
+    expect(r.input.message).toBe('what is around me')
+  })
 })

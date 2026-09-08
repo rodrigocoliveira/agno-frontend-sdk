@@ -111,7 +111,7 @@ describe('AgnoProvider + useAgnoAgent', () => {
     const moved = reg.get('old', () => fake)
     reg.retain(moved); reg.rekey(moved, 'new')
     expect(reg.get('new', () => fake)).toBe(moved)
-    // `fresh` is retained right away: an entry nobody retains is disposed on the next tick (below).
+    // `fresh` is retained right away: an entry nobody retains is disposed after two chained ticks (below).
     const fresh = reg.get('old', () => fake)
     reg.retain(fresh)
     expect(fresh).not.toBe(moved)
@@ -120,7 +120,7 @@ describe('AgnoProvider + useAgnoAgent', () => {
     expect(destroyed).toBe(2)
   })
 
-  test('a store created in a render that never retained it is disposed on the next tick', async () => {
+  test('a store created in a render that never retained it is disposed after two chained ticks', async () => {
     const reg = createRegistry()
     let destroyed = 0
     const fake = { destroy: () => destroyed++ } as unknown as AgnoStore<'agent'>
@@ -133,6 +133,33 @@ describe('AgnoProvider + useAgnoAgent', () => {
     await new Promise((r) => setTimeout(r, 5))
     expect(destroyed).toBe(1)
     expect(reg.get('kept', () => fake)).toBe(kept)
+  })
+
+  test('a fresh entry survives a commit deferred by one full tick (the react-router startTransition case)', async () => {
+    const reg = createRegistry()
+    let destroyed = 0
+    const fake = { destroy: () => destroyed++ } as unknown as AgnoStore<'agent'>
+    const entry = reg.get('k', () => fake)
+    // Simulate a commit (and its retaining layout effect) that lands one full macrotask tick late —
+    // exactly what a react-router `startTransition`-wrapped navigation does. A single setTimeout(0)
+    // disposal would have already fired by the time this runs; two chained ticks give it room.
+    await new Promise((r) => setTimeout(r, 0))
+    reg.retain(entry)
+    await new Promise((r) => setTimeout(r, 5))
+    expect(destroyed).toBe(0)
+  })
+
+  test('the retain effect runs as a layout effect: send does not reject as destroyed right after mount', async () => {
+    const m = mockFetch((call) => call.url.endsWith('/agents/a/runs')
+      ? frames([{ event: 'RunStarted', run_id: 'r1', session_id: 's1' } as AnyEvent, { event: 'RunCompleted', run_id: 'r1', content: 'ok' } as AnyEvent])
+      : json({}, 404))
+    let store: AgnoStore<'agent'> | undefined
+    render(<AgnoProvider api={apiWith(m.fetch)}><Chat onStore={(s) => (store = s)} /></AgnoProvider>)
+    // Only a microtask elapses here, no macrotask (the registry's setTimeout(0) disposal chain) has had
+    // a chance to fire — this can only pass if `useAgnoStore` already retained the entry synchronously
+    // during the commit phase, i.e. via useLayoutEffect rather than a later, separate useEffect task.
+    await Promise.resolve()
+    await act(async () => { await expect(store!.send('hi')).resolves.toBeUndefined() })
   })
 
   test('a new-chat component mounting next to a rekeyed one does not steal its ref', async () => {
