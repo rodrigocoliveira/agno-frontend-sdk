@@ -25,10 +25,14 @@ every feature of `@rodrigocoliveira/agno-hooks`.
 # examples/demo-agentos/README.md
 cd examples/demo-agentos
 uv sync
-OPENAI_API_KEY=sk-... uv run python server.py     # OpenAI
+cp .env.example .env   # then fill in OPENAI_API_KEY — the server loads this file automatically
+uv run python server.py     # OpenAI, once .env has a key
 # or, with no key, a local Ollama model (needs tool calling: llama3.2, qwen2.5, ...)
 ollama pull llama3.2 && uv run python server.py
 ```
+
+`.env` is gitignored and optional — a shell-exported `OPENAI_API_KEY` works the same way and takes
+priority over `.env` if both are set.
 
 Auth is JWT (HS256) with per-user isolation, and the server hands out its three demo tokens
 (`admin`, `user-1`, `user-2`) itself — no separate step needed here.
