@@ -22,6 +22,18 @@ agent_os = AgentOS(
 )
 app = agent_os.get_app()
 
+
+@app.get("/dev/tokens")
+def dev_tokens() -> dict[str, str]:
+    """Powers demo-react's Settings → "Quick demo login" — no terminal step needed to try the demo.
+
+    Excluded from JWT auth in auth.py's AuthorizationConfig (a token-issuing endpoint can't itself
+    require a token). Fine for a local demo with a well-known default JWT_SECRET; never ship this
+    in a real app.
+    """
+    return auth.all_tokens()
+
+
 if __name__ == "__main__":
     import uvicorn
 

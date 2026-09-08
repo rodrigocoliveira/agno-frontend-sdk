@@ -30,13 +30,8 @@ OPENAI_API_KEY=sk-... uv run python server.py     # OpenAI
 ollama pull llama3.2 && uv run python server.py
 ```
 
-Auth is JWT (HS256) with per-user isolation. Print the three demo tokens (`admin`, `user-1`,
-`user-2`) so you have something to paste into the web app in a moment:
-
-```bash
-# examples/demo-agentos/README.md
-uv run python tokens.py
-```
+Auth is JWT (HS256) with per-user isolation, and the server hands out its three demo tokens
+(`admin`, `user-1`, `user-2`) itself — no separate step needed here.
 
 ## Run the demo app
 
@@ -47,9 +42,13 @@ bun run demo:web
 ```
 
 Open the app and go to **Settings** → set the endpoint (`http://localhost:7777` by default) →
-paste the JSON that `tokens.py` printed into **Import JSON** → select `user-1` as the active
-token. `user-1` has every scope `demo-react` needs except resolving approvals, which is
-admin-only — see [concepts/auth.md](concepts/auth.md).
+under "Quick demo login", click **Fetch demo tokens** → pick `User 1`. `user-1` has every scope
+`demo-react` needs except resolving approvals, which is admin-only — see
+[concepts/auth.md](concepts/auth.md).
+
+Pointing `demo-react` at a real (non-demo) AgentOS instead? Switch Quick demo login off and paste
+a token by hand — or, for `demo-agentos` specifically, `uv run python tokens.py` still prints the
+same three JWTs if you'd rather script it.
 
 ## Your first conversation
 

@@ -18,12 +18,12 @@ that shows each one. Needs an OpenAI key or a local Ollama model (details in
 ```bash
 bun install
 OPENAI_API_KEY=sk-... bun run demo:server   # terminal 1 → http://localhost:7777
-bun run demo:tokens                          # prints admin / user-1 / user-2 JWTs
 bun run demo:web                             # terminal 2 → http://localhost:5173
 ```
 
-In the app open **Settings**, import the tokens JSON and pick `user-1`. The Home page maps each
-demo target to the feature it shows and to its guide chapter.
+In the app open **Settings**, click **Fetch demo tokens** under "Quick demo login" and pick
+`User 1` — one click, no terminal step. The Home page maps each demo target to the feature it shows
+and to its guide chapter.
 
 ## Develop
 
