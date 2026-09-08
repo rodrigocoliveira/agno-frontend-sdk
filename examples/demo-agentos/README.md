@@ -13,7 +13,9 @@ OPENAI_API_KEY=sk-... uv run python server.py     # OpenAI
 ollama pull llama3.2 && uv run python server.py
 ```
 
-Then print the tokens and import them in the web app (Settings → Import):
+Then open `demo-react`, go to **Settings** and click **Fetch demo tokens** under "Quick demo
+login" — it hands you Admin / User 1 / User 2 with one click, no terminal step. `tokens.py` still
+works if you'd rather script it or paste a token by hand (Quick demo login off):
 
 ```bash
 uv run python tokens.py
