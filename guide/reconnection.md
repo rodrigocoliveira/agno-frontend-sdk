@@ -51,6 +51,10 @@ itself, so it has no `eventIndex` to resume from — and a resume with no record
 run from its very first event. The store clears the run's streamed state first and lets the replay
 rebuild `content`, `tools`, `steps` and the rest from scratch, so nothing is double-applied.
 
+A row reattached this way counts as `isBusy` and is reachable by a no-arg `cancel()`, exactly like a
+run started or resumed in this session — reloading mid-run doesn't cost you the ability to stop it,
+and the composer shows Stop instead of a disabled Send for the whole time it's streaming back in.
+
 ## Reconnect on drop
 
 A live stream that drops mid-run (not a clean server-side close — those always mean the run

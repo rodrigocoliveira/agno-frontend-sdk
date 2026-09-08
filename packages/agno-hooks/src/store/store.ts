@@ -234,7 +234,11 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
         return (asRun(r).kind === 'team' ? { ...fresh, members: (r as TeamRun).members } : fresh) as RunOf<K>
       }))
       if (destroyed) return
-      runs = loaded; status = 'ready'; error = null; commit()
+      // `local` is what `cancel()` and `isBusy` look for: a run this client is actively driving. A run
+      // still `running` after reload is about to be reconnected below, so it counts as ours again too —
+      // otherwise the composer shows a disabled Send instead of Stop, and cancel() finds nothing to cancel.
+      runs = loaded.map((r) => (r.status === 'running' ? { ...r, local: true } : r))
+      status = 'ready'; error = null; commit()
       for (const r of runs) {
         if (r.status !== 'running') continue
         void startStream(r.id, {
