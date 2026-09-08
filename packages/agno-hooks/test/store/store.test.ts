@@ -24,7 +24,7 @@ describe('hydrate', () => {
     expect(store.getSnapshot().status).toBe('loading')
     const s = await until(store, (s) => s.status === 'ready')
     expect(s.runs.map((r) => [r.id, r.status, r.input.message])).toEqual([['r1', 'completed', 'first'], ['r2', 'running', 'second']])
-    expect(s.isBusy).toBe(false) // reattached runs never block send
+    expect(s.isBusy).toBe(true) // reattached runs are cancellable, same as a run started here
     await until(store, () => m.calls.some((c) => c.url.endsWith('/runs/r2/resume')))
     expect(bodyParam(m.calls.at(-1)!, 'last_event_index')).toBeNull()
     live.push(started('r2')); live.push(content('r2', 'partial ', 1)); live.push(content('r2', 'text', 2)); live.push(completed('r2', 'partial text', 3)); live.close()
@@ -32,6 +32,22 @@ describe('hydrate', () => {
     expect(done.runs[1]!.content).toBe('partial text')
     expect(done.runs[1]!.eventIndex).toBe(3)
     expect(done.runs[0]).toBe(s.runs[0]) // untouched run keeps its reference
+  })
+
+  test('a reattached running row is cancellable with no runId, same as a run started here', async () => {
+    const live = openSse()
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([
+        { run_id: 'r1', agent_id: 'a', status: 'RUNNING', run_input: 'hi', content: '' },
+      ])
+      if (call.url.endsWith('/runs/r1/resume')) return live.response
+      if (call.url.endsWith('/runs/r1/cancel')) return json({ ok: true })
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch, { sessionId: 's1' })
+    await until(store, (s) => s.status === 'ready')
+    await store.cancel()
+    expect(m.calls.at(-1)!.url).toContain('/agents/a/runs/r1/cancel')
   })
 
   test('a reattach without last_event_index replays from zero onto an empty run, not onto the row', async () => {
