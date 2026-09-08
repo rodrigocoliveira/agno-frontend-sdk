@@ -8,10 +8,14 @@ every feature of `@rodrigocoliveira/agno-hooks`. Pair it with [`examples/demo-re
 ```bash
 cd examples/demo-agentos
 uv sync
-OPENAI_API_KEY=sk-... uv run python server.py     # OpenAI
+cp .env.example .env   # then fill in OPENAI_API_KEY — the server loads this file automatically
+uv run python server.py     # OpenAI, once .env has a key
 # or, with no key, a local Ollama model (needs tool calling: llama3.2, qwen2.5, ...)
 ollama pull llama3.2 && uv run python server.py
 ```
+
+`.env` is gitignored and optional — a shell-exported `OPENAI_API_KEY=sk-... uv run python server.py`
+works exactly the same and takes priority over `.env` if both are set.
 
 Then open `demo-react`, go to **Settings** and click **Fetch demo tokens** under "Quick demo
 login" — it hands you Admin / User 1 / User 2 with one click, no terminal step. `tokens.py` still
