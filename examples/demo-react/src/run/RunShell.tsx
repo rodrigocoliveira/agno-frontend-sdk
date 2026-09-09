@@ -32,8 +32,8 @@ export function RunShell<K extends Kind>({ kind, targetId, hook, hint }: Props<K
     if (hook.sessionId && hook.sessionId !== sessionParam) setParams({ session: hook.sessionId }, { replace: true })
   }, [hook.sessionId, sessionParam, setParams])
 
-  const send = (message: string, files: File[]) =>
-    hook.send(files.length > 0 ? ({ message, files } as SendInput<K>) : message)
+  const send = (message: string, files: File[], background: boolean) =>
+    hook.send({ message, background, ...(files.length > 0 ? { files } : {}) } as SendInput<K>)
 
   return (
     <div className="grid h-full grid-cols-[200px_1fr]">

@@ -30,13 +30,13 @@ export type WorkflowRunInput = RunInputBase
 `WorkflowRunInput` has no `files` field at all — a workflow's input is whatever its own input
 schema declares, not a chat message with attachments. Whenever the body includes at least one
 `File`/`Blob`, `agno-api` encodes the request as `multipart/form-data` instead of JSON
-automatically; you don't pick the encoding yourself. `RunShell`'s `send` wrapper only builds the
-object form when there are files to attach:
+automatically; you don't pick the encoding yourself. `RunShell`'s `send` wrapper only adds `files`
+to the `SendInput` object when there are any to attach:
 
 ```tsx
 // examples/demo-react/src/run/RunShell.tsx
-const send = (message: string, files: File[]) =>
-  hook.send(files.length > 0 ? ({ message, files } as SendInput<K>) : message)
+const send = (message: string, files: File[], background: boolean) =>
+  hook.send({ message, background, ...(files.length > 0 ? { files } : {}) } as SendInput<K>)
 ```
 
 ## Show them

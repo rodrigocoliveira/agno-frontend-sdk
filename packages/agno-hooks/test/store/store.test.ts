@@ -175,6 +175,19 @@ describe('send', () => {
     expect(store.getSnapshot().runs[0]!.input.files).toHaveLength(1)
   })
 
+  test('send() background overrides the store default, for both the request and reconnect behavior', async () => {
+    const fg = openSse()
+    const m = mockFetch(() => fg.response)
+    const store = agentStore(m.fetch) // store default: background true
+    const p = store.send({ message: 'hi', background: false })
+    await until(store, () => m.calls.length === 1)
+    expect(bodyParam(m.calls[0]!, 'background')).toBe('false')
+    fg.push(started('r1')); fg.drop()
+    await p
+    expect(store.getSnapshot().runs[0]).toMatchObject({ status: 'error', error: 'Connection lost' })
+    expect(m.calls).toHaveLength(1) // no reconnect: the override made this call foreground
+  })
+
   test('a failed settle GET marks the run as an error instead of leaving it running', async () => {
     const live = openSse()
     const m = mockFetch((call) => {

@@ -8,13 +8,14 @@ interface Props {
   busy: boolean
   allowFiles: boolean
   placeholder: string
-  onSend: (message: string, files: File[]) => Promise<void>
+  onSend: (message: string, files: File[], background: boolean) => Promise<void>
   onCancel: () => void
 }
 
 export function Composer({ busy, allowFiles, placeholder, onSend, onCancel }: Props) {
   const [text, setText] = useState('')
   const [files, setFiles] = useState<File[]>([])
+  const [background, setBackground] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -23,7 +24,7 @@ export function Composer({ busy, allowFiles, placeholder, onSend, onCancel }: Pr
     if (!text.trim() || busy) return
     setError(null)
     try {
-      await onSend(text, files)
+      await onSend(text, files, background)
       setText(''); setFiles([])
     } catch (err) { setError(messageOf(err)) }
   }
@@ -38,6 +39,15 @@ export function Composer({ busy, allowFiles, placeholder, onSend, onCancel }: Pr
             <Button type="button" variant="ghost" onClick={() => fileInput.current?.click()} title="Attach files"><Paperclip size={16} /></Button>
           </>
         )}
+        <Button
+          type="button"
+          variant={background ? 'secondary' : 'ghost'}
+          onClick={() => setBackground((b) => !b)}
+          title={background ? 'Run survives a disconnect (click to run in the foreground)' : 'Run ends if you disconnect (click to run in the background)'}
+          aria-pressed={background}
+        >
+          Background
+        </Button>
         <Textarea
           rows={2}
           value={text}
