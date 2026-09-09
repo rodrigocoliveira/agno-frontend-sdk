@@ -22,6 +22,14 @@ function Chat({ sessionId, onStore, tools }: { sessionId?: string; onStore?: (s:
   </div>
 }
 
+function StateChat({ sessionId }: { sessionId?: string }) {
+  const chat = useAgnoAgent({ agentId: 'a', sessionId })
+  return <div>
+    <span data-testid="state">{JSON.stringify(chat.sessionState)}</span>
+    <button onClick={() => void chat.mergeSessionState({ count: 1 })}>bump</button>
+  </div>
+}
+
 describe('AgnoProvider + useAgnoAgent', () => {
   test('hydrates through the provider api; two components share one store; StrictMode does not double-fetch', async () => {
     const m = mockFetch((call) => (call.url.includes('/sessions/s1/runs') ? rows('s1') : json({}, 404)))
@@ -199,5 +207,21 @@ describe('AgnoProvider + useAgnoAgent', () => {
     rerender(ui('new-9', false, false))
     await new Promise((r) => setTimeout(r, 10))
     await expect(learned.send('again')).rejects.toThrow('Store destroyed')
+  })
+
+  test('expõe sessionState e mergeSessionState pelo hook', async () => {
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([])
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ session_id: 's1', session_state: { count: 0 } })
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH')
+        return json({ session_id: 's1', session_state: JSON.parse(String(call.init.body)).session_state })
+      return json({}, 404)
+    })
+    const { getByTestId, getByText } = render(
+      <AgnoProvider api={apiWith(m.fetch)}><StateChat sessionId="s1" /></AgnoProvider>,
+    )
+    await waitFor(() => expect(getByTestId('state').textContent).toBe('{"count":0}'))
+    await act(async () => { getByText('bump').click() })
+    await waitFor(() => expect(getByTestId('state').textContent).toBe('{"count":1}'))
   })
 })
