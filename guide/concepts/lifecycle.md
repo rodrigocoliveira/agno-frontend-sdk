@@ -39,10 +39,11 @@ lock of its own, and it is **stricter** than `isBusy`: it refuses while *any* ru
 reattached from another tab, say. `isBusy` deliberately ignores those for `send`, but they can
 still mutate `session_state` server-side at any moment, and a manual edit sends the whole field, so
 letting the two overlap would lose one side's changes. The reverse direction is covered too:
-`send`, `continue` and `resume` wait for an in-flight manual write to land before opening the run,
-so its pre-run snapshot cannot overwrite what the run is about to write. A write counts as in
-flight from the moment `mergeSessionState` is called — including the round trip it may need first
-to fetch the state it will merge onto, before there is any `PATCH` yet to wait for.
+`send`, `continue` and `resume` wait for every outstanding manual write to land before opening the
+run, so a pre-run snapshot cannot overwrite what the run is about to write. A write counts as
+outstanding from the moment `mergeSessionState` is called — while it waits its turn behind an
+earlier edit, and while it fetches the state it will merge onto, both of which happen before there
+is any `PATCH` yet to wait for.
 
 One consequence worth knowing: a run stuck at `'running'` locally — its stream never settled
 properly — blocks manual edits indefinitely, since the store still counts it as active. The escape

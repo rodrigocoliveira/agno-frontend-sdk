@@ -127,12 +127,15 @@ plus `store` itself (the underlying `AgnoStore<K>`, for code that needs `setFron
   element by element); `null` sets a key rather than deleting it. Pass either a patch object or an
   updater function receiving the current state — the updater form is what you want whenever the new
   value depends on the old one. The merge is applied to `sessionState` synchronously — the button
-  reacts instantly — as long as the state has already been seeded, which is the common case (the
-  session was loaded, or a run's terminal event carried it). If it has not been, one
-  `GET /sessions/{id}` happens first, so that the **complete** server state is what the patch merges
-  onto instead of an empty object; the local update lands when that round trip returns. Either way
-  the resulting complete state is then `PATCH`ed to the server; concurrent calls are serialized, so
-  two `PATCH /sessions/{id}` are never in flight at once. The
+  reacts instantly — as long as the state has already been seeded (the common case: the session was
+  loaded, or a run's terminal event carried it) **and** no earlier edit of yours is still
+  outstanding, which is what an isolated +/- click looks like. Otherwise the merge is computed only
+  when its turn comes: if the state has not been seeded, one `GET /sessions/{id}` happens first, so
+  that the **complete** server state is what the patch merges onto instead of an empty object; and
+  if an earlier edit is still outstanding, this one waits for it, so it composes onto that edit's
+  result instead of onto a state that predates it. Either way the resulting complete state is then
+  `PATCH`ed to the server; concurrent calls are serialized, so two `PATCH /sessions/{id}` are never
+  in flight at once and they carry the edits in call order. The
   returned promise rejects if that write fails (the store resyncs `sessionState` from the server
   first), and it throws before touching the network if the store is destroyed, if there is no
   session yet (nothing exists to patch until the first run), or if **any** run is `running` or
