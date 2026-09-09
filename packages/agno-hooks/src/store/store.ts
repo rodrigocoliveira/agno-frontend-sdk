@@ -51,6 +51,9 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   let sessionId: string | null = options.sessionId ?? null
   let error: Error | null = null
   let sessionState: Record<string, unknown> | null = null
+  // Once a terminal event has synced `sessionState`, that authoritative post-run value must never be
+  // overwritten by a slower, parallel `hydrate()` fetch resolving afterward with pre-run state.
+  let sessionStateFromEvent = false
   let destroyed = false
   let localSeq = 0
   const listeners = new Set<() => void>()
@@ -182,7 +185,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
           if (onAccepted && ACCEPTED.has(ev.event)) { next = onAccepted(next); onAccepted = undefined }
           if (typeof ev.event_index === 'number') next = { ...next, eventIndex: ev.event_index }
           const evState = (ev as { session_state?: unknown }).session_state
-          if (isPlainObject(evState)) sessionState = evState
+          if (isPlainObject(evState)) { sessionState = evState; sessionStateFromEvent = true }
           replace(id, next)
           if (next.id !== id) { streams.delete(id); streams.set(next.id, ac); id = next.id }
           if (!sessionId && next.sessionId) sessionId = next.sessionId
@@ -215,7 +218,9 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     status = 'loading'; commit()
     const sid = sessionId
     void options.api.sessions.get(sid).then((session) => {
-      if (destroyed || sessionId !== sid) return
+      // A fresher, event-driven sync (a terminal run event already updated `sessionState`) always wins
+      // over this fetch: it only seeds state before any interaction, so a late response here is stale.
+      if (destroyed || sessionId !== sid || sessionStateFromEvent) return
       const state = (session as { session_state?: unknown }).session_state
       sessionState = isPlainObject(state) ? state : null
       commit()

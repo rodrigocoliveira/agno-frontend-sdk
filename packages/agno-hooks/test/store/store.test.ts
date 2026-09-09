@@ -161,6 +161,26 @@ describe('sessionState (read)', () => {
     await store.send('hi')
     expect(store.getSnapshot().sessionState).toEqual({ count: 5 })
   })
+
+  test('an event-driven update wins over a slower, stale hydrate() fetch', async () => {
+    const withState = (run_id: string, text: string, i: number, session_state: Record<string, unknown>): AnyEvent =>
+      ({ event: 'RunCompleted', run_id, content: text, event_index: i, session_state })
+    const m = mockFetch(async (call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([])
+      // hydrate()'s sessions.get resolves slowly with the PRE-run (stale) state.
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') { await wait(40); return json({ session_id: 's1', session_state: { count: 1 } }) }
+      // The run's terminal event carries the fresh, authoritative POST-run state and completes first.
+      if (call.url.endsWith('/agents/a/runs')) return frames([started('r1', 's1'), withState('r1', 'hi', 1, { count: 5 })])
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch, { sessionId: 's1' })
+    await until(store, (s) => s.status === 'ready')
+    await store.send('hi')
+    expect(store.getSnapshot().sessionState).toEqual({ count: 5 })
+    // Let the delayed hydrate() fetch resolve; it must not clobber the event-driven value.
+    await wait(60)
+    expect(store.getSnapshot().sessionState).toEqual({ count: 5 })
+  })
 })
 
 describe('send', () => {
