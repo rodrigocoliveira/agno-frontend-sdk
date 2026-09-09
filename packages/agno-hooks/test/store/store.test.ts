@@ -579,6 +579,46 @@ describe('mergeSessionState (write)', () => {
     expect(JSON.parse(String(patchCall.init.body)).session_state).toEqual({ count: 8, agentWrote: 'keep me' })
   })
 
+  test('duas merges concorrentes com sessionState null compõem em ordem — o último PATCH carrega as duas', async () => {
+    // Each call takes its slot in the PATCH queue synchronously, at call time, but freezes the whole-field
+    // payload it sends only once it has a base to merge onto. If those two orders can disagree — a seed
+    // fetch per call, answering out of order — the write that lands LAST carries a state built BEFORE the
+    // one ahead of it, silently dropping that patch server-side while the local state still shows both.
+    // Releasing every outstanding on-demand seed newest-first is the interleaving that exposes it.
+    const releases: (() => void)[] = []
+    let gets = 0
+    const patchBodies: unknown[] = []
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([])
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') {
+        // GET #1 is hydrate()'s seed, failing the way hydrate treats as harmless: `sessionState` stays null.
+        if (++gets === 1) return json({ detail: 'boom' }, 500)
+        const d = deferred()
+        releases.push(d.release)
+        return d.promise.then(() => json({ session_id: 's1', session_state: { srv: 'keep me' } }))
+      }
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH') {
+        const state = JSON.parse(String(call.init.body)).session_state
+        patchBodies.push(state)
+        return json({ session_id: 's1', session_state: state })
+      }
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch, { sessionId: 's1' })
+    await until(store, (s) => s.status === 'ready' && gets === 1)
+    expect(store.getSnapshot().sessionState).toBeNull()
+    const p1 = store.mergeSessionState({ a: 1 })
+    const p2 = store.mergeSessionState({ b: 2 })
+    await until(store, () => releases.length >= 1)
+    await wait(10) // tempo de sobra pra uma segunda busca de seed (uma implementação sem dedupe) sair
+    for (const release of [...releases].reverse()) release() // o seed mais novo responde primeiro
+    await Promise.all([p1, p2])
+    expect(store.getSnapshot().sessionState).toEqual({ srv: 'keep me', a: 1, b: 2 })
+    // Cada PATCH leva o total daquele momento, em ordem de chamada — e o último, que é o que fica valendo
+    // no servidor, tem as duas edições e a chave que só existia lá.
+    expect(patchBodies).toEqual([{ srv: 'keep me', a: 1 }, { srv: 'keep me', a: 1, b: 2 }])
+  })
+
   test('com sessionState null e o seed sob demanda também falhando, rejeita sem nenhum PATCH', async () => {
     const m = mockFetch((call) => {
       if (call.url.includes('/sessions/s1/runs')) return json([])
@@ -652,6 +692,50 @@ describe('mergeSessionState (write)', () => {
       await Promise.all([pMerge, pSend])
       expect(m.calls.some((c) => c.url.endsWith('/agents/a/runs'))).toBe(true)
       // The run's terminal event is the last word on session_state, not the merge that preceded it.
+      expect(store.getSnapshot().sessionState).toEqual({ count: 42 })
+    })
+
+    test('send() espera mesmo quando a escrita ainda está buscando o seed (sessionState null)', async () => {
+      // The window the counter used to miss entirely: `mergeSessionState` with `sessionState` still null
+      // has to GET the session before it can merge, and while it is parked on that fetch it is just as
+      // outstanding as one parked on its PATCH — the run it lets through would race the merge's own
+      // whole-field write. The seed GET is gated, so the merge is provably still mid-seed when send()
+      // is called; no PATCH has even been built yet.
+      const seed = deferred()
+      let gets = 0
+      const m = mockFetch((call) => {
+        if (call.url.includes('/sessions/s1/runs')) return json([])
+        if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') {
+          gets++
+          // GET #1 is hydrate()'s seed: it fails, which hydrate treats as harmless — that is exactly how
+          // `sessionState` legitimately stays null on a ready store. GET #2 is the merge's own seed.
+          return gets === 1
+            ? json({ detail: 'boom' }, 500)
+            : seed.promise.then(() => json({ session_id: 's1', session_state: { count: 0, agentWrote: 'keep me' } }))
+        }
+        if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH') return json({ session_id: 's1', session_state: stateOf(call) })
+        if (call.url.endsWith('/agents/a/runs'))
+          return frames([started('r1', 's1'), { event: 'RunCompleted', run_id: 'r1', content: 'ok', event_index: 1, session_state: { count: 42 } } as AnyEvent])
+        throw new Error('unexpected ' + call.url)
+      })
+      const store = agentStore(m.fetch, { sessionId: 's1' })
+      await until(store, (s) => s.status === 'ready' && gets === 1)
+      expect(store.getSnapshot().sessionState).toBeNull()
+      const pMerge = store.mergeSessionState({ count: 1 })
+      await until(store, () => gets === 2) // o seed do merge está comprovadamente em voo
+      const pSend = store.send('hi')
+      await wait(10) // tempo de sobra pra uma run (incorretamente) despachada acontecer
+      expect(m.calls.some((c) => c.url.endsWith('/agents/a/runs'))).toBe(false) // run not opened yet
+      expect(m.calls.some((c) => c.init.method === 'PATCH')).toBe(false) // e o PATCH nem foi montado ainda
+      seed.release()
+      await Promise.all([pMerge, pSend])
+      const patchAt = m.calls.findIndex((c) => c.init.method === 'PATCH')
+      const runAt = m.calls.findIndex((c) => c.url.endsWith('/agents/a/runs'))
+      expect(patchAt).toBeGreaterThanOrEqual(0)
+      expect(runAt).toBeGreaterThan(patchAt) // a run só abriu depois que a escrita manual aterrissou
+      // Nada foi apagado em nenhuma das duas direções: o PATCH levou o estado completo do servidor
+      // (`agentWrote`), e o evento terminal da run é a última palavra sobre `session_state`.
+      expect(stateOf(m.calls[patchAt]!)).toEqual({ count: 1, agentWrote: 'keep me' })
       expect(store.getSnapshot().sessionState).toEqual({ count: 42 })
     })
 
