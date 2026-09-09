@@ -26,12 +26,12 @@ describe('deepMerge', () => {
   })
 
   test('null seta a chave, não apaga', () => {
-    expect(deepMerge({ a: { b: 1 } }, { a: null })).toEqual({ a: null })
+    expect(deepMerge<Record<string, unknown>>({ a: { b: 1 } }, { a: null })).toEqual({ a: null })
   })
 
   test('chave nova é adicionada; troca de tipo objeto<->primitivo substitui', () => {
-    expect(deepMerge({ a: 1 }, { b: 2 })).toEqual({ a: 1, b: 2 })
-    expect(deepMerge({ a: { x: 1 } }, { a: 'now a string' })).toEqual({ a: 'now a string' })
+    expect(deepMerge<Record<string, unknown>>({ a: 1 }, { b: 2 })).toEqual({ a: 1, b: 2 })
+    expect(deepMerge<Record<string, unknown>>({ a: { x: 1 } }, { a: 'now a string' })).toEqual({ a: 'now a string' })
   })
 
   test('não muta os argumentos', () => {
