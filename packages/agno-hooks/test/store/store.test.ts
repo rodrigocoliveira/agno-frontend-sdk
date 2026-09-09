@@ -124,6 +124,45 @@ describe('hydrate', () => {
   })
 })
 
+describe('sessionState (read)', () => {
+  test('hydrate busca session_state via sessions.get em paralelo com os runs', async () => {
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([])
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ session_id: 's1', session_state: { count: 1 } })
+      throw new Error('unexpected ' + call.url)
+    })
+    const s = await until(agentStore(m.fetch, { sessionId: 's1' }), (s) => s.status === 'ready' && s.sessionState !== null)
+    expect(s.sessionState).toEqual({ count: 1 })
+  })
+
+  test('sem sessionId, sessionState fica null e sessions.get não é chamado', async () => {
+    const m = mockFetch(() => json({}, 404))
+    const s = agentStore(m.fetch).getSnapshot()
+    expect(s.sessionState).toBeNull()
+    expect(m.calls).toHaveLength(0)
+  })
+
+  test('sessions.get falhando não quebra o hydrate; sessionState fica null', async () => {
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([])
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ detail: 'boom' }, 500)
+      throw new Error('unexpected ' + call.url)
+    })
+    const s = await until(agentStore(m.fetch, { sessionId: 's1' }), (s) => s.status === 'ready')
+    expect(s.sessionState).toBeNull()
+    expect(s.error).toBeNull()
+  })
+
+  test('evento terminal de run com session_state atualiza o snapshot', async () => {
+    const withState = (run_id: string, text: string, i: number, session_state: Record<string, unknown>): AnyEvent =>
+      ({ event: 'RunCompleted', run_id, content: text, event_index: i, session_state })
+    const m = mockFetch(() => frames([started('r1', 's9'), withState('r1', 'hello', 1, { count: 5 })]))
+    const store = agentStore(m.fetch)
+    await store.send('hi')
+    expect(store.getSnapshot().sessionState).toEqual({ count: 5 })
+  })
+})
+
 describe('send', () => {
   test('optimistic run, id swap, session learned, background by default', async () => {
     const m = mockFetch(() => frames([started('r1', 's9'), content('r1', 'hel', 1), content('r1', 'lo', 2), completed('r1', 'hello', 3)]))

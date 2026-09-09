@@ -5,6 +5,7 @@ import {
   isTerminal, type AgentRun, type AnyEvent, type ContinueExtra, type Decision, type FrontendTool, type Kind, type Pending,
   type Run, type RunOf, type RunRowLike, type SendInput, type Snapshot, type Target, type TeamRun, type WorkflowRun,
 } from '../types'
+import { isPlainObject } from '../utils/deep-merge'
 import { routesFor } from './routes'
 import { runStream } from './stream'
 
@@ -49,6 +50,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   let status: Snapshot<K>['status'] = options.sessionId ? 'loading' : 'ready'
   let sessionId: string | null = options.sessionId ?? null
   let error: Error | null = null
+  let sessionState: Record<string, unknown> | null = null
   let destroyed = false
   let localSeq = 0
   const listeners = new Set<() => void>()
@@ -78,7 +80,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   const build = (): Snapshot<K> => ({
     status, sessionId, runs, pending: computePending(),
     isBusy: runs.some((r) => (r.local && r.status === 'running') || r.status === 'paused'),
-    error,
+    error, sessionState,
   })
   let snapshot: Snapshot<K> = build()
   function commit() {
@@ -179,6 +181,8 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
           let next = applyEvent(run, ev)
           if (onAccepted && ACCEPTED.has(ev.event)) { next = onAccepted(next); onAccepted = undefined }
           if (typeof ev.event_index === 'number') next = { ...next, eventIndex: ev.event_index }
+          const evState = (ev as { session_state?: unknown }).session_state
+          if (isPlainObject(evState)) sessionState = evState
           replace(id, next)
           if (next.id !== id) { streams.delete(id); streams.set(next.id, ac); id = next.id }
           if (!sessionId && next.sessionId) sessionId = next.sessionId
@@ -209,6 +213,13 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   async function hydrate(): Promise<void> {
     if (!sessionId) { status = 'ready'; commit(); return }
     status = 'loading'; commit()
+    const sid = sessionId
+    void options.api.sessions.get(sid).then((session) => {
+      if (destroyed || sessionId !== sid) return
+      const state = (session as { session_state?: unknown }).session_state
+      sessionState = isPlainObject(state) ? state : null
+      commit()
+    }).catch(() => { /* estado é auxiliar; falha aqui não derruba o hydrate */ })
     let rows: RunRowLike[]
     try {
       rows = (await options.api.sessions.runs(sessionId)) as unknown as RunRowLike[]
