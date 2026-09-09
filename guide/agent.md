@@ -114,19 +114,19 @@ const submit = async (e?: FormEvent) => {
   if (!text.trim() || busy) return
   setError(null)
   try {
-    await onSend(text, files)
+    await onSend(text, files, background)
     setText(''); setFiles([])
   } catch (err) { setError(messageOf(err)) }
 }
 ```
 
-`onSend` is `RunShell`'s wrapper around `hook.send`, which packs files into a `SendInput` object
-only when there are any (see [files.md](files.md)):
+`onSend` is `RunShell`'s wrapper around `hook.send`, which packs the composer's `background` toggle
+into a `SendInput` object (files too, only when there are any — see [files.md](files.md)):
 
 ```tsx
 // examples/demo-react/src/run/RunShell.tsx
-const send = (message: string, files: File[]) =>
-  hook.send(files.length > 0 ? ({ message, files } as SendInput<K>) : message)
+const send = (message: string, files: File[], background: boolean) =>
+  hook.send({ message, background, ...(files.length > 0 ? { files } : {}) } as SendInput<K>)
 ```
 
 ## Cancel
