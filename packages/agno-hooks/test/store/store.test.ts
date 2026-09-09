@@ -165,20 +165,24 @@ describe('sessionState (read)', () => {
   test('an event-driven update wins over a slower, stale hydrate() fetch', async () => {
     const withState = (run_id: string, text: string, i: number, session_state: Record<string, unknown>): AnyEvent =>
       ({ event: 'RunCompleted', run_id, content: text, event_index: i, session_state })
-    const m = mockFetch(async (call) => {
+    // hydrate()'s sessions.get is held open by this gate, so it is still in flight — provably, not just
+    // probably — while the run below completes with the fresh, authoritative POST-run state.
+    const gate = deferred()
+    const m = mockFetch((call) => {
       if (call.url.includes('/sessions/s1/runs')) return json([])
-      // hydrate()'s sessions.get resolves slowly with the PRE-run (stale) state.
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') { await wait(40); return json({ session_id: 's1', session_state: { count: 1 } }) }
-      // The run's terminal event carries the fresh, authoritative POST-run state and completes first.
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET')
+        return gate.promise.then(() => json({ session_id: 's1', session_state: { count: 1 } }))
       if (call.url.endsWith('/agents/a/runs')) return frames([started('r1', 's1'), withState('r1', 'hi', 1, { count: 5 })])
       throw new Error('unexpected ' + call.url)
     })
     const store = agentStore(m.fetch, { sessionId: 's1' })
     await until(store, (s) => s.status === 'ready')
+    expect(store.getSnapshot().sessionState).toBeNull() // the seed fetch has not answered yet
     await store.send('hi')
     expect(store.getSnapshot().sessionState).toEqual({ count: 5 })
-    // Let the delayed hydrate() fetch resolve; it must not clobber the event-driven value.
-    await wait(60)
+    // Only now does the stale hydrate() response arrive; it must not clobber the event-driven value.
+    gate.release()
+    await wait(5)
     expect(store.getSnapshot().sessionState).toEqual({ count: 5 })
   })
 })
@@ -490,12 +494,45 @@ describe('mergeSessionState (write)', () => {
     expect(m.calls).toHaveLength(0)
   })
 
-  test('chamadas concorrentes serializam: merge local em ordem, PATCH sequencial com o total acumulado', async () => {
+  test('chamadas concorrentes serializam: nunca dois PATCH em voo, merge local em ordem, total acumulado', async () => {
+    // The first PATCH's response is held open, so "only one PATCH has reached the network" is checked
+    // while it is provably still in flight — an implementation that fired both in parallel (no queue at
+    // all) would produce the same bodies in the same order and pass a purely content-based assertion.
+    const gate = deferred()
     const patchBodies: unknown[] = []
     const m = mockFetch((call) => {
       if (call.url.includes('/sessions/s1/runs')) return json([])
       if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ session_id: 's1', session_state: { count: 0 } })
       if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH') {
+        const state = JSON.parse(String(call.init.body)).session_state
+        const isFirst = patchBodies.length === 0
+        patchBodies.push(state)
+        const body = () => json({ session_id: 's1', session_state: state })
+        return isFirst ? gate.promise.then(body) : body()
+      }
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch, { sessionId: 's1' })
+    await until(store, (s) => s.sessionState !== null)
+    const p1 = store.mergeSessionState({ count: 1 })
+    const p2 = store.mergeSessionState((current) => ({ count: (current.count as number) + 10 }))
+    expect(store.getSnapshot().sessionState).toEqual({ count: 11 }) // ambos os merges locais já aplicaram, antes de qualquer PATCH resolver
+    await wait(10) // tempo de sobra pra um despacho paralelo (incorreto) acontecer
+    expect(m.calls.filter((c) => c.init.method === 'PATCH')).toHaveLength(1) // exclusão mútua: o PATCH de p2 ainda não saiu
+    gate.release()
+    await Promise.all([p1, p2])
+    expect(m.calls.filter((c) => c.init.method === 'PATCH')).toHaveLength(2)
+    expect(patchBodies).toEqual([{ count: 1 }, { count: 11 }]) // PATCH em ordem, cada um com o total daquele momento
+  })
+
+  test('PATCH falhando resincroniza do servidor, rejeita só aquela chamada e não trava o que já estava na fila', async () => {
+    let failNext = true
+    const patchBodies: unknown[] = []
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([])
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ session_id: 's1', session_state: { count: failNext ? 0 : 99 } })
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH') {
+        if (failNext) { failNext = false; return json({ detail: 'boom' }, 500) }
         const state = JSON.parse(String(call.init.body)).session_state
         patchBodies.push(state)
         return json({ session_id: 's1', session_state: state })
@@ -505,29 +542,17 @@ describe('mergeSessionState (write)', () => {
     const store = agentStore(m.fetch, { sessionId: 's1' })
     await until(store, (s) => s.sessionState !== null)
     const p1 = store.mergeSessionState({ count: 1 })
-    const p2 = store.mergeSessionState((current) => ({ count: (current.count as number) + 10 }))
-    expect(store.getSnapshot().sessionState).toEqual({ count: 11 }) // ambos os merges locais já aplicaram, antes de qualquer PATCH resolver
-    await Promise.all([p1, p2])
-    expect(patchBodies).toEqual([{ count: 1 }, { count: 11 }]) // PATCH em ordem, cada um com o total daquele momento
-  })
-
-  test('PATCH falhando resincroniza do servidor e rejeita só aquela chamada; fila continua', async () => {
-    let failNext = true
-    const m = mockFetch((call) => {
-      if (call.url.includes('/sessions/s1/runs')) return json([])
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ session_id: 's1', session_state: { count: failNext ? 0 : 99 } })
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH') {
-        if (failNext) { failNext = false; return json({ detail: 'boom' }, 500) }
-        return json({ session_id: 's1', session_state: JSON.parse(String(call.init.body)).session_state })
-      }
-      throw new Error('unexpected ' + call.url)
-    })
-    const store = agentStore(m.fetch, { sessionId: 's1' })
-    await until(store, (s) => s.sessionState !== null)
-    await expect(store.mergeSessionState({ count: 1 })).rejects.toThrow()
-    expect(store.getSnapshot().sessionState).toEqual({ count: 99 }) // resincronizado, não ficou preso no otimista {count:1}
-    await store.mergeSessionState({ count: 2 })
-    expect(store.getSnapshot().sessionState).toEqual({ count: 2 })
+    const p2 = store.mergeSessionState({ count: 2 }) // enfileirada ANTES de p1 falhar — sem await entre as duas
+    await expect(p1).rejects.toThrow()
+    await p2 // a fila não trava: a escrita que já estava atrás da que falhou saiu mesmo assim
+    expect(patchBodies).toEqual([{ count: 2 }])
+    // Resincronizado do servidor, não preso no otimista {count:1}. A escrita já enfileirada NÃO é
+    // rebaseada em cima do resync (limitação deliberada, documentada em mergeSessionState), então o
+    // valor local reflete o resync — e não o {count:2} que acabou de ir pro servidor.
+    expect(store.getSnapshot().sessionState).toEqual({ count: 99 })
+    // Uma chamada nova parte do estado resincronizado.
+    await store.mergeSessionState({ extra: true })
+    expect(store.getSnapshot().sessionState).toEqual({ count: 99, extra: true })
   })
 
   test('com sessionState ainda null, faz o seed do servidor antes de mesclar — nunca faz PATCH só das chaves do patch', async () => {
