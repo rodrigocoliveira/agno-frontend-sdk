@@ -31,6 +31,22 @@ if (snapshot.isBusy) throw new Error('A run is already active')
 `isBusy` is true whenever a local run is `'running'` or any run is `'paused'` — the store allows
 exactly one active run per session at a time.
 
+### Manual session-state edits
+
+`mergeSessionState` (see the [agno-hooks reference](../reference/agno-hooks.md#agnohookk)) has a
+lock of its own, and it is **stricter** than `isBusy`: it refuses while *any* run of the session is
+`'running'` or `'paused'`, including one this client never started and is not driving — a run
+reattached from another tab, say. `isBusy` deliberately ignores those for `send`, but they can
+still mutate `session_state` server-side at any moment, and a manual edit sends the whole field, so
+letting the two overlap would lose one side's changes. The reverse direction is covered too:
+`send`, `continue` and `resume` wait for an in-flight manual write to land before opening the run,
+so its pre-run snapshot cannot overwrite what the run is about to write.
+
+One consequence worth knowing: a run stuck at `'running'` locally — its stream never settled
+properly — blocks manual edits indefinitely, since the store still counts it as active. The escape
+hatch is `cancel()` (or `cancel(runId)`), which settles the run and releases the lock; it is not a
+deadlock, just a run nobody told the store about the end of.
+
 ## Streaming
 
 Once `send` opens a stream, each SSE event is applied to the run through `applyEvent`, which is

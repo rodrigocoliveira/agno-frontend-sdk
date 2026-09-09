@@ -88,12 +88,13 @@ export interface AgnoHook<K extends Kind> extends Snapshot<K> {
   runTools: AgnoStore<K>['runTools']
   resume: AgnoStore<K>['resume']
   cancel: AgnoStore<K>['cancel']
+  mergeSessionState: AgnoStore<K>['mergeSessionState']
   store: AgnoStore<K>
 }
 ```
 
 What every `useAgnoAgent`/`useAgnoTeam`/`useAgnoWorkflow` call returns: the current `Snapshot<K>`
-(`status`, `sessionId`, `runs`, `pending`, `isBusy`, `error`) spread with the store's action methods,
+(`status`, `sessionId`, `runs`, `pending`, `isBusy`, `error`, `sessionState`) spread with the store's action methods,
 plus `store` itself (the underlying `AgnoStore<K>`, for code that needs `setFrontendTools` or
 `destroy` directly). The methods' contracts, from the `AgnoStore<K>` interface they are typed from
 (`store/store.ts`):
@@ -118,6 +119,31 @@ plus `store` itself (the underlying `AgnoStore<K>`, for code that needs `setFron
   client-driven (`local`) non-terminal run when omitted. A run with no server id yet is aborted
   locally; otherwise `cancel` calls the server and falls back to marking the run `cancelled` after 5
   seconds if the server does not answer.
+- **`mergeSessionState(patch: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown>)): Promise<void>`**
+  — edits the session's `session_state` directly, without going through the agent (a shopping-list
+  quantity +/- button, say). The patch is **deep-merged** into the current state: plain objects
+  recurse at any depth, so sibling keys the patch does not mention always survive; arrays and
+  primitives replace wholesale (a list is recomputed and passed as a new array, never merged
+  element by element); `null` sets a key rather than deleting it. Pass either a patch object or an
+  updater function receiving the current state — the updater form is what you want whenever the new
+  value depends on the old one. The merge is applied to `sessionState` synchronously (the button
+  reacts instantly) and the resulting **complete** state is then `PATCH`ed to the server;
+  concurrent calls are serialized, so two `PATCH /sessions/{id}` are never in flight at once. The
+  returned promise rejects if that write fails (the store resyncs `sessionState` from the server
+  first), and it throws before touching the network if the store is destroyed, if there is no
+  session yet (nothing exists to patch until the first run), or if **any** run is `running` or
+  `paused` for this session — a stricter rule than `isBusy`, see
+  [concepts/lifecycle.md](../concepts/lifecycle.md#manual-session-state-edits). Handle the
+  rejection; it is how the UI learns the edit did not stick:
+
+  ```tsx
+  <button
+    disabled={chat.isBusy}
+    onClick={() => chat.mergeSessionState((current) => ({
+      items: (current.items as Item[]).map((i) => (i.id === id ? { ...i, qty: i.qty + 1 } : i)),
+    })).catch((e) => toast.error(String(e)))}
+  >+</button>
+  ```
 - **`store: AgnoStore<K>`** — the framework-agnostic store the hook is built on (see
   [`createAgnoStore`](#createagnostore--agnostore--storeoptions) below).
 
@@ -133,6 +159,7 @@ export interface Snapshot<K extends Kind> {
   pending: Pending<K> | null
   isBusy: boolean
   error: Error | null
+  sessionState: Record<string, unknown> | null
 }
 ```
 
@@ -141,6 +168,12 @@ hydrated from `GET /sessions/{id}/runs`; `'ready'` once `runs` reflects the serv
 for a brand-new session); `'error'` when hydration itself failed. `pending` is non-null while the
 most recent paused run in `runs` is awaiting a decision. `isBusy` is true while any `local` run is
 `running`, or while any run is `paused` — `send` rejects during that window.
+
+`sessionState` is the session's `session_state` exactly as the server holds it — the complete, raw
+object, never a view filtered by the UI. It is seeded from `GET /sessions/{id}` during hydration,
+refreshed whenever a run's terminal event carries a new `session_state` (that is how a change the
+agent itself made shows up without an extra round trip), and updated by `mergeSessionState`. It is
+`null` until one of those has happened: a brand-new session with no run yet has no state to read.
 
 ### `Run`, `AgentRun`, `TeamRun`, `WorkflowRun`, `RunBase`
 
@@ -454,6 +487,7 @@ export interface AgnoStore<K extends Kind> {
   runTools(runId?: string): Promise<void>
   resume(runId: string): Promise<void>
   cancel(runId?: string): Promise<void>
+  mergeSessionState(patch: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown>)): Promise<void>
   setFrontendTools(tools: Record<string, FrontendTool> | undefined): void
   destroy(): void
 }
@@ -475,7 +509,7 @@ const unsubscribe = store.subscribe(() => console.log(store.getSnapshot()))
 await store.send('hi')
 ```
 
-`store.getSnapshot()` returns `{ status, sessionId, runs, pending, isBusy, error }` (a new reference
+`store.getSnapshot()` returns `{ status, sessionId, runs, pending, isBusy, error, sessionState }` (a new reference
 only when something changes); `store.subscribe(listener)` follows the `getSnapshot`/`subscribe`
 contract `useSyncExternalStore` expects. `setFrontendTools` replaces the tools passed at
 construction time (what the hooks call whenever the `frontendTools` option changes identity).

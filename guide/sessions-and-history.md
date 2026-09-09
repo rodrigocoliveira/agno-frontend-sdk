@@ -87,6 +87,20 @@ for (const r of runs) {
 }
 ```
 
+## Session state
+
+Alongside its runs, a session carries a `session_state` object — the agent's own scratch space
+(a cart, a checklist, whatever the agent writes there). The hook exposes it as `sessionState`,
+seeded from `GET /sessions/{id}` during hydration and refreshed whenever a run's terminal event
+carries a new value, so a change the agent made during a run shows up without an extra round trip.
+
+You can also edit it yourself, without asking the agent to, through `mergeSessionState` — the
++/- button on a shopping-list row, say. It deep-merges (sibling keys survive; arrays and primitives
+replace) and it is locked while any run of the session is active, so a manual edit and a run can
+never overwrite each other. Full contract in the
+[agno-hooks reference](reference/agno-hooks.md#agnohookk); the locking rules are in
+[concepts/lifecycle.md](concepts/lifecycle.md#manual-session-state-edits).
+
 ## Listing sessions
 
 There's no `useAgnoSessions` hook — list sessions with `useAgnoApi()` and
