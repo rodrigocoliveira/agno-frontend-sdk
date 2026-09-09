@@ -66,9 +66,11 @@ export type Run = AgentRun | TeamRun | WorkflowRun
 export type RunOf<K extends Kind> = K extends 'agent' ? AgentRun : K extends 'team' ? TeamRun : WorkflowRun
 
 type StoreOwned = 'stream' | 'background' | 'session_id'
+// `background` is a store default that a single send() may override; `stream`/`session_id` stay store-owned.
+type SendOwned = 'stream' | 'session_id'
 export type SendInput<K extends Kind> = K extends 'agent'
-  ? Omit<AgentRunInput, StoreOwned>
-  : K extends 'team' ? Omit<TeamRunInput, StoreOwned> : Omit<WorkflowRunInput, StoreOwned>
+  ? Omit<AgentRunInput, SendOwned>
+  : K extends 'team' ? Omit<TeamRunInput, SendOwned> : Omit<WorkflowRunInput, SendOwned>
 
 export type ContinueExtra<K extends Kind> = K extends 'agent'
   ? Omit<AgentContinueInput, 'tools' | StoreOwned>

@@ -259,6 +259,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     if (status === 'loading') throw new Error('Session is still loading')
     if (snapshot.isBusy) throw new Error('A run is already active')
     const body = (typeof input === 'string' ? { message: input } : input) as Record<string, unknown>
+    const runBackground = typeof body.background === 'boolean' ? body.background : background
     const id = `local-${++localSeq}`
     const run = createRun(kind, targetId, {
       id, status: 'running', local: true, sessionId, createdAt: Date.now() / 1000,
@@ -266,8 +267,8 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     } as Partial<RunOf<K>>)
     runs = [...runs, run]; commit()
     await startStream(id, {
-      first: (signal) => routes.create({ ...body, session_id: sessionId ?? undefined, background, stream: true }, { signal }),
-      resumable: background,
+      first: (signal) => routes.create({ ...body, session_id: sessionId ?? undefined, background: runBackground, stream: true }, { signal }),
+      resumable: runBackground,
       onFail: failRun,
     })
   }
