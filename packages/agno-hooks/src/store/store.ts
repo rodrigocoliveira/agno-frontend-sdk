@@ -5,7 +5,7 @@ import {
   isTerminal, type AgentRun, type AnyEvent, type ContinueExtra, type Decision, type FrontendTool, type Kind, type Pending,
   type Run, type RunOf, type RunRowLike, type SendInput, type Snapshot, type Target, type TeamRun, type WorkflowRun,
 } from '../types'
-import { isPlainObject } from '../utils/deep-merge'
+import { deepMerge, isPlainObject } from '../utils/deep-merge'
 import { routesFor } from './routes'
 import { runStream } from './stream'
 
@@ -31,6 +31,7 @@ export interface AgnoStore<K extends Kind> {
   runTools(runId?: string): Promise<void>
   resume(runId: string): Promise<void>
   cancel(runId?: string): Promise<void>
+  mergeSessionState(patch: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown>)): Promise<void>
   setFrontendTools(tools: Record<string, FrontendTool> | undefined): void
   destroy(): void
 }
@@ -56,6 +57,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   let sessionStateFromEvent = false
   let destroyed = false
   let localSeq = 0
+  let stateWriteQueue: Promise<unknown> = Promise.resolve()
   const listeners = new Set<() => void>()
   const streams = new Map<string, AbortController>()     // keyed by the run's CURRENT id
   const toolAborts = new Map<string, AbortController>()
@@ -325,6 +327,34 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     ;(timer as { unref?: () => void }).unref?.()
   }
 
+  async function mergeSessionState(
+    patch: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown>),
+  ): Promise<void> {
+    if (destroyed) throw new Error('Store destroyed')
+    if (snapshot.isBusy) throw new Error('A run is already active')
+    if (!sessionId) throw new Error('mergeSessionState requires an active session — send a message first')
+    const sid = sessionId
+    const resolved = typeof patch === 'function' ? patch(sessionState ?? {}) : patch
+    const next = deepMerge(sessionState ?? {}, resolved)
+    sessionState = next
+    commit()
+    const run = stateWriteQueue.then(async () => {
+      try {
+        await options.api.sessions.update(sid, { session_state: next })
+      } catch (err) {
+        try {
+          const session = await options.api.sessions.get(sid)
+          const state = (session as { session_state?: unknown }).session_state
+          sessionState = isPlainObject(state) ? state : null
+        } catch { /* melhor esforço: mantém o que já tinha localmente */ }
+        commit()
+        throw err
+      }
+    })
+    stateWriteQueue = run.catch(() => {})
+    return run
+  }
+
   // ---- HITL ----
 
   function setResolution(runId: string, tool: ToolExecution) {
@@ -494,7 +524,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     kind,
     getSnapshot: () => snapshot,
     subscribe: (l) => { listeners.add(l); return () => { listeners.delete(l) } },
-    send, continue: continueRun, resolveTool, runTools, resume, cancel,
+    send, continue: continueRun, resolveTool, runTools, resume, cancel, mergeSessionState,
     setFrontendTools: (t) => { frontendTools = t ?? {} },
     destroy,
   }
