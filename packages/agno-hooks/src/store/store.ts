@@ -385,7 +385,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     // other's session_state change. Merge computation above is always synchronous now (sessionState is
     // guaranteed non-null past the guards), so only the network PATCH needs to go through the queue.
     stateWritesInFlight++
-    const run = stateWriteQueue.then(async () => {
+    const runSeedAndPatch = async () => {
       try {
         await options.api.sessions.update(sid, { session_state: next })
       } catch (err) {
@@ -402,7 +402,12 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
       } finally {
         stateWritesInFlight--
       }
-    })
+    }
+    // `stateWriteQueue` is designed to never reject (see its two assignment sites), so passing the same
+    // callback as both the resolve and reject handler is belt-and-suspenders: if that invariant were ever
+    // violated by a future change, the decrement above would still run instead of permanently stranding
+    // `stateWritesInFlight` above 0.
+    const run = stateWriteQueue.then(runSeedAndPatch, runSeedAndPatch)
     stateWriteQueue = run.catch(() => {})
     return run
   }
