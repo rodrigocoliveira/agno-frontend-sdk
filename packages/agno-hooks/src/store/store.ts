@@ -331,17 +331,27 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     patch: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown>),
   ): Promise<void> {
     if (destroyed) throw new Error('Store destroyed')
-    if (snapshot.isBusy) throw new Error('A run is already active')
+    // Stricter than `snapshot.isBusy`: a run this client merely reattached to (never taken over via
+    // resume()/continue(), so `local` is false and `isBusy` — deliberately — ignores it for `send()`)
+    // can still have `session_state` mutated server-side at any moment. Any run running/paused for this
+    // session must block a manual edit, regardless of who is driving it.
+    if (runs.some((r) => r.status === 'running' || r.status === 'paused')) throw new Error('A run is already active')
     if (!sessionId) throw new Error('mergeSessionState requires an active session — send a message first')
     const sid = sessionId
     const resolved = typeof patch === 'function' ? patch(sessionState ?? {}) : patch
     const next = deepMerge(sessionState ?? {}, resolved)
     sessionState = next
+    // Same guard hydrate()'s sessions.get callback checks: this optimistic write is authoritative, so a
+    // slower, stale hydrate() fetch resolving afterward must not clobber it either.
+    sessionStateFromEvent = true
     commit()
     const run = stateWriteQueue.then(async () => {
       try {
         await options.api.sessions.update(sid, { session_state: next })
       } catch (err) {
+        // Best-effort resync from the server; note this does NOT rebase any writes already queued behind
+        // this failed one (they were precomputed from the pre-failure `sessionState`, not from this fresh
+        // value) — a deliberately deferred limitation of a queue that stores full states, not patches.
         try {
           const session = await options.api.sessions.get(sid)
           const state = (session as { session_state?: unknown }).session_state

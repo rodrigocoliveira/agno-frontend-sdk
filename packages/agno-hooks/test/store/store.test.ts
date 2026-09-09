@@ -529,4 +529,42 @@ describe('mergeSessionState (write)', () => {
     await store.mergeSessionState({ count: 2 })
     expect(store.getSnapshot().sessionState).toEqual({ count: 2 })
   })
+
+  test('a merge survives a slower, stale hydrate() fetch landing afterward', async () => {
+    const m = mockFetch(async (call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([])
+      // hydrate()'s sessions.get resolves slowly with the PRE-merge (stale) state.
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') { await wait(40); return json({ session_id: 's1', session_state: { count: 1 } }) }
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH')
+        return json({ session_id: 's1', session_state: JSON.parse(String(call.init.body)).session_state })
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch, { sessionId: 's1' })
+    // Merge fires before hydrate()'s slow GET resolves — same race as the terminal-event case above.
+    await store.mergeSessionState({ count: 5 })
+    expect(store.getSnapshot().sessionState).toEqual({ count: 5 })
+    // Let the delayed hydrate() fetch resolve; it must not clobber the merge's result.
+    await wait(60)
+    expect(store.getSnapshot().sessionState).toEqual({ count: 5 })
+  })
+
+  test('throws when a run is running/paused for this session, even if reattached and not locally driven', async () => {
+    const live = openSse()
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([
+        { run_id: 'r1', agent_id: 'a', status: 'RUNNING', run_input: 'hi', content: '' },
+      ])
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ session_id: 's1', session_state: { count: 1 } })
+      if (call.url.endsWith('/runs/r1/resume')) return live.response
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch, { sessionId: 's1' })
+    const s = await until(store, (s) => s.status === 'ready')
+    // Same setup as the hydrate describe block's first test: the row is reattached automatically, but
+    // never taken over via resume()/continue(), so `isBusy` (which send() relies on) stays false.
+    expect(s.isBusy).toBe(false)
+    await expect(store.mergeSessionState({ a: 1 })).rejects.toThrow('A run is already active')
+    expect(m.calls.some((c) => c.init.method === 'PATCH')).toBe(false)
+    live.close()
+  })
 })
