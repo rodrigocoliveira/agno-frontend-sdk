@@ -103,8 +103,9 @@ describe('AgnoProvider + useAgnoAgent', () => {
     await new Promise((r) => setTimeout(r, 5))
     expect(destroyed).toBe(0)
     reg.release(k)
-    await new Promise((r) => setTimeout(r, 5))
-    expect(destroyed).toBe(1)
+    // The disposal chains two zero-delay timers (see provider.tsx's `schedule`), so a fixed short
+    // wait races real event-loop ticks and flakes under load; poll for the outcome instead.
+    await waitFor(() => expect(destroyed).toBe(1))
 
     // After a rekey the handle is what counts: `old` is free again, so a second get('old') builds a
     // brand-new entry, and the rekeyed entry is still destroyed through its own handle.
@@ -116,8 +117,7 @@ describe('AgnoProvider + useAgnoAgent', () => {
     reg.retain(fresh)
     expect(fresh).not.toBe(moved)
     reg.release(moved)
-    await new Promise((r) => setTimeout(r, 5))
-    expect(destroyed).toBe(2)
+    await waitFor(() => expect(destroyed).toBe(2))
   })
 
   test('a store created in a render that never retained it is disposed after two chained ticks', async () => {
@@ -125,8 +125,7 @@ describe('AgnoProvider + useAgnoAgent', () => {
     let destroyed = 0
     const fake = { destroy: () => destroyed++ } as unknown as AgnoStore<'agent'>
     reg.get('abandoned', () => fake)
-    await new Promise((r) => setTimeout(r, 5))
-    expect(destroyed).toBe(1)
+    await waitFor(() => expect(destroyed).toBe(1))
 
     const kept = reg.get('kept', () => fake)
     reg.retain(kept)
