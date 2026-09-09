@@ -6,6 +6,7 @@ function state(t: ToolExecution): { label: string; tone: Tone } {
   if (t.tool_call_error) return { label: 'error', tone: 'red' }
   if (isToolPending(t)) return { label: 'pending', tone: 'amber' }
   if (t.confirmed === false) return { label: 'rejected', tone: 'neutral' }
+  if (t.result == null) return { label: 'running', tone: 'blue' }
   return { label: 'done', tone: 'green' }
 }
 
