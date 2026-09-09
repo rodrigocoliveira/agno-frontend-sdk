@@ -595,6 +595,91 @@ describe('mergeSessionState (write)', () => {
     expect(store.getSnapshot().sessionState).toEqual({ count: 5 })
   })
 
+  // The lock in `mergeSessionState` stops an edit from starting while a run is active. These cover the
+  // same race from the other side: a run starting while an edit's PATCH — built from the pre-run state —
+  // is still in flight would let that stale whole-field write land after the run mutated session_state
+  // server-side, silently losing the agent's own changes.
+  describe('uma run só começa depois que a escrita manual em voo aterrissa', () => {
+    const stateOf = (call: { init: RequestInit }) => JSON.parse(String(call.init.body)).session_state
+    const gatedStateApi = (gate: { promise: Promise<void> }, rest: (call: { url: string; init: RequestInit }) => Response | Promise<Response>) =>
+      (call: { url: string; init: RequestInit }) => {
+        if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ session_id: 's1', session_state: { count: 0 } })
+        if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH')
+          return gate.promise.then(() => json({ session_id: 's1', session_state: stateOf(call) }))
+        return rest(call)
+      }
+
+    test('send() espera a fila de escrita antes de abrir a run', async () => {
+      const gate = deferred()
+      const m = mockFetch(gatedStateApi(gate, (call) => {
+        if (call.url.includes('/sessions/s1/runs')) return json([])
+        if (call.url.endsWith('/agents/a/runs'))
+          return frames([started('r1', 's1'), { event: 'RunCompleted', run_id: 'r1', content: 'ok', event_index: 1, session_state: { count: 42 } } as AnyEvent])
+        throw new Error('unexpected ' + call.url)
+      }))
+      const store = agentStore(m.fetch, { sessionId: 's1' })
+      await until(store, (s) => s.status === 'ready' && s.sessionState !== null)
+      const pMerge = store.mergeSessionState({ count: 1 })
+      const pSend = store.send('hi')
+      await wait(10)
+      expect(m.calls.some((c) => c.url.endsWith('/agents/a/runs'))).toBe(false) // run not opened yet
+      gate.release()
+      await Promise.all([pMerge, pSend])
+      expect(m.calls.some((c) => c.url.endsWith('/agents/a/runs'))).toBe(true)
+      // The run's terminal event is the last word on session_state, not the merge that preceded it.
+      expect(store.getSnapshot().sessionState).toEqual({ count: 42 })
+    })
+
+    test('resume() espera a fila de escrita antes de reabrir o stream', async () => {
+      const gate = deferred()
+      const m = mockFetch(gatedStateApi(gate, (call) => {
+        if (call.url.includes('/sessions/s1/runs')) return json([{ run_id: 'r1', agent_id: 'a', status: 'ERROR', run_input: 'hi', content: '' }])
+        if (call.url.endsWith('/runs/r1/resume'))
+          return frames([{ event: 'RunCompleted', run_id: 'r1', content: 'ok', event_index: 1, session_state: { count: 42 } } as AnyEvent])
+        throw new Error('unexpected ' + call.url)
+      }))
+      const store = agentStore(m.fetch, { sessionId: 's1' })
+      await until(store, (s) => s.status === 'ready' && s.sessionState !== null)
+      const pMerge = store.mergeSessionState({ count: 1 })
+      const pResume = store.resume('r1')
+      await wait(10)
+      expect(m.calls.some((c) => c.url.endsWith('/runs/r1/resume'))).toBe(false)
+      gate.release()
+      await Promise.all([pMerge, pResume])
+      expect(m.calls.some((c) => c.url.endsWith('/runs/r1/resume'))).toBe(true)
+      expect(store.getSnapshot().sessionState).toEqual({ count: 42 })
+    })
+
+    test('continue() espera a fila de escrita antes de retomar a run pausada', async () => {
+      // Reachable because the merge starts before hydrate() has any run to report: the rows land (with
+      // an already-paused run) only after the PATCH is in flight.
+      const gate = deferred()
+      const rows = deferred()
+      const tool = { tool_call_id: 'c1', tool_name: 'add_one', tool_args: { x: 1 }, requires_confirmation: true }
+      const m = mockFetch(gatedStateApi(gate, (call) => {
+        if (call.url.includes('/sessions/s1/runs'))
+          return rows.promise.then(() => json([{ run_id: 'r1', agent_id: 'a', status: 'PAUSED', run_input: 'hi', tools: [tool] }]))
+        if (call.url.endsWith('/agents/a/runs/r1/continue'))
+          return frames([{ event: 'RunContinued', run_id: 'r1', event_index: 10 }, { event: 'RunCompleted', run_id: 'r1', content: 'done', event_index: 11, session_state: { count: 42 } } as AnyEvent])
+        if (call.url.includes('/agents/a/runs/r1'))
+          return json({ run_id: 'r1', agent_id: 'a', status: 'PAUSED', input: { input_content: 'hi' }, tools: [tool], requirements: [{ id: 'q', tool_execution: tool }] })
+        throw new Error('unexpected ' + call.url)
+      }))
+      const store = agentStore(m.fetch, { sessionId: 's1' })
+      await until(store, (s) => s.sessionState !== null)
+      const pMerge = store.mergeSessionState({ count: 1 }) // no run yet: the lock lets this through
+      rows.release()
+      await until(store, (s) => s.pending !== null)
+      const pCont = store.continue([{ ...tool, confirmed: true }])
+      await wait(10)
+      expect(m.calls.some((c) => c.url.endsWith('/continue'))).toBe(false)
+      gate.release()
+      await Promise.all([pMerge, pCont])
+      expect(m.calls.some((c) => c.url.endsWith('/continue'))).toBe(true)
+      expect(store.getSnapshot().sessionState).toEqual({ count: 42 })
+    })
+  })
+
   test('throws when a run is running/paused for this session, even if reattached and not locally driven', async () => {
     const live = openSse()
     const m = mockFetch((call) => {

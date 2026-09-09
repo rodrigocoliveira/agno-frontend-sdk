@@ -60,6 +60,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   let destroyed = false
   let localSeq = 0
   let stateWriteQueue: Promise<unknown> = Promise.resolve()
+  let stateWritesInFlight = 0
   const listeners = new Set<() => void>()
   const streams = new Map<string, AbortController>()     // keyed by the run's CURRENT id
   const toolAborts = new Map<string, AbortController>()
@@ -97,6 +98,17 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   }
 
   const failRun = (run: RunOf<K>, err: unknown): RunOf<K> => ({ ...run, status: 'error', error: messageOf(err) })
+
+  /**
+   * The tail of the manual `session_state` write queue, or `null` when nothing is in flight or queued.
+   * A run must not start while a write is outstanding: that PATCH carries the complete PRE-run state, so
+   * letting it land after the run mutated `session_state` server-side would silently erase what the run
+   * wrote (`mergeSessionState`'s lock only covers the mirror image — an edit starting during a run).
+   * Returning `null` instead of an already-resolved promise keeps the common path free of even a
+   * microtask, so `send()` still creates its optimistic run — and flips `isBusy` — synchronously.
+   * The queue is built never to reject (every job is chained through `.catch`), so awaiting it is safe.
+   */
+  const pendingStateWrites = (): Promise<unknown> | null => (stateWritesInFlight > 0 ? stateWriteQueue : null)
 
   /**
    * A stream opened without `last_event_index` replays the run from its very first event, so whatever the
@@ -274,6 +286,14 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     if (destroyed) throw new Error('Store destroyed')
     if (status === 'loading') throw new Error('Session is still loading')
     if (snapshot.isBusy) throw new Error('A run is already active')
+    // Wait for any in-flight manual state write to land before starting a run, so its stale pre-run
+    // PATCH can't overwrite what this run is about to do to `session_state`.
+    const writes = pendingStateWrites()
+    if (writes) {
+      await writes
+      if (destroyed) throw new Error('Store destroyed')
+      if (snapshot.isBusy) throw new Error('A run is already active')
+    }
     const body = (typeof input === 'string' ? { message: input } : input) as Record<string, unknown>
     const id = `local-${++localSeq}`
     const run = createRun(kind, targetId, {
@@ -290,8 +310,17 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
 
   async function resume(runId: string): Promise<void> {
     if (streams.has(runId)) return
-    const run = find(runId)
+    let run = find(runId)
     if (!run || run.status === 'completed' || run.status === 'cancelled' || isLocalId(run.id)) return
+    // Wait for any in-flight manual state write to land before starting a run, so its stale pre-run
+    // PATCH can't overwrite what this run is about to do to `session_state`.
+    const writes = pendingStateWrites()
+    if (writes) {
+      await writes
+      if (destroyed || streams.has(runId)) return
+      run = find(runId)
+      if (!run || run.status === 'completed' || run.status === 'cancelled') return
+    }
     // `local` is what `cancel()` and `isBusy` look for: a run this client is actively driving, whether it
     // was created here or picked up from history.
     replace(runId, { ...run, status: 'running', error: null, local: true }); commit()
@@ -361,6 +390,9 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     // slower, stale hydrate() fetch resolving afterward must not clobber it either.
     sessionStateSeeded = true
     commit()
+    // Counted (not just queued) so `pendingStateWrites()` can tell "nothing outstanding" from "a write
+    // is in flight", and keep the no-write path of send()/continue()/resume() synchronous.
+    stateWritesInFlight++
     const run = stateWriteQueue.then(async () => {
       try {
         await options.api.sessions.update(sid, { session_state: next })
@@ -377,7 +409,9 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
         throw err
       }
     })
-    stateWriteQueue = run.catch(() => {})
+    // The tail never rejects (so awaiting it elsewhere is safe) and only settles once this job's own
+    // count has been released, so a waiter on it never sees a phantom in-flight write.
+    stateWriteQueue = run.catch(() => {}).finally(() => { stateWritesInFlight-- })
     return run
   }
 
@@ -422,6 +456,15 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
 
   async function continueRun(decisions: Decision<K>[], extra?: ContinueExtra<K>): Promise<void> {
     if (destroyed) throw new Error('Store destroyed')
+    // Wait for any in-flight manual state write to land before resuming a run, so its stale pre-run
+    // PATCH can't overwrite what this run is about to do to `session_state`. Reachable even though the
+    // merge lock blocks edits during a pause: the write can have started before hydrate() reported the
+    // already-paused run. `pending` is read after the await, so it is re-checked for free.
+    const writes = pendingStateWrites()
+    if (writes) {
+      await writes
+      if (destroyed) throw new Error('Store destroyed')
+    }
     const p = snapshot.pending
     if (!p) throw new Error('No paused run to continue')
     const run = asRun(find(p.runId)!)
