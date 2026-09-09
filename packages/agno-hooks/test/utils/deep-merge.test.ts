@@ -34,6 +34,18 @@ describe('deepMerge', () => {
     expect(deepMerge<Record<string, unknown>>({ a: { x: 1 } }, { a: 'now a string' })).toEqual({ a: 'now a string' })
   })
 
+  test('`__proto__` no patch é ignorado: não vira acessor nem troca o protótipo do resultado', () => {
+    // `out['__proto__'] = value` dispara o setter herdado de Object.prototype em vez de criar uma
+    // propriedade própria — o merge resultante deixaria de ser um objeto plano (isPlainObject o
+    // rejeitaria depois) mesmo sem poluir nada global.
+    const out = deepMerge<Record<string, unknown>>({ a: 1 }, JSON.parse('{"__proto__": {"polluted": true}, "b": 2}'))
+    expect(isPlainObject(out)).toBe(true)
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype)
+    expect(Object.prototype.hasOwnProperty.call(out, '__proto__')).toBe(false)
+    expect(out).toEqual({ a: 1, b: 2 })
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+  })
+
   test('não muta os argumentos', () => {
     const base = { a: { b: 1 } }
     const partial = { a: { c: 2 } }
