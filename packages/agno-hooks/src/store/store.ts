@@ -426,7 +426,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     // settle early (a throw before the await would) or for its payload to be computed out of queue order.
     const previousQueue = stateWriteQueue
     stateWritesInFlight++
-    const run = previousQueue.then(async () => {
+    const runSeedMergeAndPatch = async () => {
       try {
         let current = sessionState
         if (current === null) {
@@ -445,7 +445,13 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
       } finally {
         stateWritesInFlight--
       }
-    })
+    }
+    // `previousQueue` is designed to never reject (every value ever assigned to `stateWriteQueue` is
+    // either `Promise.resolve()` or `someRun.catch(() => {})`), so passing the same callback as both the
+    // resolve AND reject handler is belt-and-suspenders: if that invariant were ever violated by a future
+    // change elsewhere in this file, the decrement above would still run instead of permanently stranding
+    // `stateWritesInFlight` above 0 and wedging every future send()/resume()/continueRun().
+    const run = previousQueue.then(runSeedMergeAndPatch, runSeedMergeAndPatch)
     stateWriteQueue = run.catch(() => {})
     return run
   }

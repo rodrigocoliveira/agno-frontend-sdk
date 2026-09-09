@@ -135,7 +135,9 @@ plus `store` itself (the underlying `AgnoStore<K>`, for code that needs `setFron
   if an earlier edit is still outstanding, this one waits for it, so it composes onto that edit's
   result instead of onto a state that predates it. Either way the resulting complete state is then
   `PATCH`ed to the server; concurrent calls are serialized, so two `PATCH /sessions/{id}` are never
-  in flight at once and they carry the edits in call order. The
+  in flight at once and they carry the edits in call order, for calls made through the normal
+  `send`/`mergeSessionState`/etc. API — not from inside a store `subscribe()` listener, which runs
+  synchronously during a commit and can re-enter before the write queue has published its new tail. The
   returned promise rejects if that write fails (the store resyncs `sessionState` from the server
   first), and it throws before touching the network if the store is destroyed, if there is no
   session yet (nothing exists to patch until the first run), or if **any** run is `running` or
