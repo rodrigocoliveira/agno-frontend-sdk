@@ -12,6 +12,7 @@ export const CATALOG: CatalogEntry[] = [
   { kind: 'agent', id: 'confirm', try: 'Invoice ACME 120 dollars', shows: 'requires_confirmation, decided outside the chat', guide: 'confirmation-and-input.md' },
   { kind: 'agent', id: 'interview', try: 'Plan me a weekend', shows: 'ask_user with multi-select and a requires_user_input form', guide: 'confirmation-and-input.md' },
   { kind: 'agent', id: 'approval', try: 'Refund order 42, 30 dollars', shows: 'Admin approval: pauses until /approvals resolves it', guide: 'approvals.md' },
+  { kind: 'agent', id: 'shopping', try: 'Add 2 apples and a loaf of bread', shows: 'Manual session_state edits (+/- buttons) alongside the agent editing the same state via tools', guide: 'sessions-and-history.md' },
   { kind: 'team', id: 'support', try: 'Invoice ACME 50 dollars', shows: 'Member runs; a confirmation coming from a member', guide: 'team.md' },
   { kind: 'team', id: 'research', try: 'Electric bikes', shows: 'Parallel members, member_responses, ask_user on the leader', guide: 'team.md' },
   { kind: 'team', id: 'field', try: 'What is around me?', shows: 'A browser tool executed for a member', guide: 'frontend-tools.md' },
