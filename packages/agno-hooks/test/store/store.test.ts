@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { createAgnoStore } from '../../src/store/store'
 import type { AnyEvent } from '../../src/types'
-import { apiWith, bodyParam, frames, json, mockFetch, openSse, until, wait } from './helpers'
+import { apiWith, bodyParam, deferred, frames, json, mockFetch, openSse, until, wait } from './helpers'
 
 const started = (run_id: string, session_id = 's1', i = 0): AnyEvent => ({ event: 'RunStarted', run_id, session_id, agent_id: 'a', event_index: i })
 const content = (run_id: string, text: string, i: number): AnyEvent => ({ event: 'RunContent', run_id, content: text, content_type: 'str', event_index: i })
@@ -530,21 +530,68 @@ describe('mergeSessionState (write)', () => {
     expect(store.getSnapshot().sessionState).toEqual({ count: 2 })
   })
 
-  test('a merge survives a slower, stale hydrate() fetch landing afterward', async () => {
-    const m = mockFetch(async (call) => {
+  test('com sessionState ainda null, faz o seed do servidor antes de mesclar — nunca faz PATCH só das chaves do patch', async () => {
+    // The PATCH is a whole-field replacement, so merging onto `{}` would erase every server-side key
+    // the agent had written. `sessionState` is null here for the reason the hydrate suite calls
+    // harmless: the seed GET failed (500). The next GET — mergeSessionState's own — succeeds.
+    let gets = 0
+    const m = mockFetch((call) => {
       if (call.url.includes('/sessions/s1/runs')) return json([])
-      // hydrate()'s sessions.get resolves slowly with the PRE-merge (stale) state.
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') { await wait(40); return json({ session_id: 's1', session_state: { count: 1 } }) }
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') {
+        gets++
+        return gets === 1 ? json({ detail: 'boom' }, 500) : json({ session_id: 's1', session_state: { count: 7, agentWrote: 'keep me' } })
+      }
       if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH')
         return json({ session_id: 's1', session_state: JSON.parse(String(call.init.body)).session_state })
       throw new Error('unexpected ' + call.url)
     })
     const store = agentStore(m.fetch, { sessionId: 's1' })
-    // Merge fires before hydrate()'s slow GET resolves — same race as the terminal-event case above.
+    await until(store, (s) => s.status === 'ready' && gets === 1)
+    expect(store.getSnapshot().sessionState).toBeNull()
+    await store.mergeSessionState({ count: 8 })
+    expect(store.getSnapshot().sessionState).toEqual({ count: 8, agentWrote: 'keep me' })
+    const patchCall = m.calls.find((c) => c.url.endsWith('/sessions/s1') && c.init.method === 'PATCH')!
+    expect(JSON.parse(String(patchCall.init.body)).session_state).toEqual({ count: 8, agentWrote: 'keep me' })
+  })
+
+  test('com sessionState null e o seed sob demanda também falhando, rejeita sem nenhum PATCH', async () => {
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([])
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ detail: 'boom' }, 500)
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch, { sessionId: 's1' })
+    await until(store, (s) => s.status === 'ready')
+    await expect(store.mergeSessionState({ count: 1 })).rejects.toThrow('boom')
+    expect(m.calls.some((c) => c.init.method === 'PATCH')).toBe(false)
+    expect(store.getSnapshot().sessionState).toBeNull() // nada de estado parcial inventado
+  })
+
+  test('a merge survives a slower, stale hydrate() fetch landing afterward', async () => {
+    const gate = deferred()
+    let gets = 0
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([])
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') {
+        // The FIRST GET is hydrate()'s seed: held open until this test releases it, so it is
+        // provably still in flight while the merge below happens. mergeSessionState's own on-demand
+        // seed (the second GET) answers immediately.
+        gets++
+        const body = () => json({ session_id: 's1', session_state: { count: 1 } })
+        return gets === 1 ? gate.promise.then(body) : body()
+      }
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH')
+        return json({ session_id: 's1', session_state: JSON.parse(String(call.init.body)).session_state })
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch, { sessionId: 's1' })
+    await until(store, () => gets === 1)
+    expect(store.getSnapshot().sessionState).toBeNull() // hydrate's seed has not landed
     await store.mergeSessionState({ count: 5 })
     expect(store.getSnapshot().sessionState).toEqual({ count: 5 })
-    // Let the delayed hydrate() fetch resolve; it must not clobber the merge's result.
-    await wait(60)
+    // Only now does hydrate()'s stale response arrive; it must not clobber the merge's result.
+    gate.release()
+    await wait(5)
     expect(store.getSnapshot().sessionState).toEqual({ count: 5 })
   })
 

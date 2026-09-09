@@ -52,9 +52,11 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   let sessionId: string | null = options.sessionId ?? null
   let error: Error | null = null
   let sessionState: Record<string, unknown> | null = null
-  // Once a terminal event has synced `sessionState`, that authoritative post-run value must never be
-  // overwritten by a slower, parallel `hydrate()` fetch resolving afterward with pre-run state.
-  let sessionStateFromEvent = false
+  // True once some value more authoritative than the initial `hydrate()` seed exists: a terminal run
+  // event, a successful manual merge, or a seed `mergeSessionState` fetched on demand. Any of those is
+  // newer than the parallel `hydrate()` fetch, so a still-pending `hydrate()` response must not
+  // overwrite it when it finally lands.
+  let sessionStateSeeded = false
   let destroyed = false
   let localSeq = 0
   let stateWriteQueue: Promise<unknown> = Promise.resolve()
@@ -187,7 +189,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
           if (onAccepted && ACCEPTED.has(ev.event)) { next = onAccepted(next); onAccepted = undefined }
           if (typeof ev.event_index === 'number') next = { ...next, eventIndex: ev.event_index }
           const evState = (ev as { session_state?: unknown }).session_state
-          if (isPlainObject(evState)) { sessionState = evState; sessionStateFromEvent = true }
+          if (isPlainObject(evState)) { sessionState = evState; sessionStateSeeded = true }
           replace(id, next)
           if (next.id !== id) { streams.delete(id); streams.set(next.id, ac); id = next.id }
           if (!sessionId && next.sessionId) sessionId = next.sessionId
@@ -222,7 +224,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     void options.api.sessions.get(sid).then((session) => {
       // A fresher, event-driven sync (a terminal run event already updated `sessionState`) always wins
       // over this fetch: it only seeds state before any interaction, so a late response here is stale.
-      if (destroyed || sessionId !== sid || sessionStateFromEvent) return
+      if (destroyed || sessionId !== sid || sessionStateSeeded) return
       const state = (session as { session_state?: unknown }).session_state
       sessionState = isPlainObject(state) ? state : null
       commit()
@@ -338,12 +340,26 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     if (runs.some((r) => r.status === 'running' || r.status === 'paused')) throw new Error('A run is already active')
     if (!sessionId) throw new Error('mergeSessionState requires an active session — send a message first')
     const sid = sessionId
-    const resolved = typeof patch === 'function' ? patch(sessionState ?? {}) : patch
-    const next = deepMerge(sessionState ?? {}, resolved)
+    let current = sessionState
+    if (current === null) {
+      // The PATCH below replaces the whole `session_state` field, never a delta — so merging onto `{}`
+      // here would erase every server-side key the agent had written. `sessionState` is still null
+      // whenever hydrate()'s seed fetch has not landed (or failed — hydrate treats that as harmless),
+      // or the session was learned from a send() whose terminal event carried no state. Seed it from
+      // the server first; if that fetch fails too, let it reject rather than write a partial state.
+      const session = await options.api.sessions.get(sid)
+      const state = (session as { session_state?: unknown }).session_state
+      // A terminal event may have landed a fresher value while that fetch was in flight; prefer it.
+      current = sessionState ?? (isPlainObject(state) ? state : {})
+      sessionState = current
+      sessionStateSeeded = true
+    }
+    const resolved = typeof patch === 'function' ? patch(current) : patch
+    const next = deepMerge(current, resolved)
     sessionState = next
     // Same guard hydrate()'s sessions.get callback checks: this optimistic write is authoritative, so a
     // slower, stale hydrate() fetch resolving afterward must not clobber it either.
-    sessionStateFromEvent = true
+    sessionStateSeeded = true
     commit()
     const run = stateWriteQueue.then(async () => {
       try {
