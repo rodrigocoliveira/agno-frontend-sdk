@@ -81,6 +81,8 @@ Diferente do v2 (onde isso era só recomendação de doc, nunca imposto — `agn
 
 Se `sessionId === null` (nenhuma run foi enviada ainda), `mergeSessionState` lança erro explicando que a sessão ainda não existe. Sem suporte a edição pré-sessão / buffer local no v1 — decisão explícita pra não complexificar; se aparecer necessidade real (montar o carrinho antes da primeira mensagem), é uma extensão futura e não bloqueia o design atual.
 
+O mesmo contrato se estende a `sessionState === null`: se a sessão existe mas `session_state` ainda não foi carregado (`hydrate()` ainda não respondeu, ou nenhum evento terminal chegou a carregá-lo), `mergeSessionState` lança em vez de tentar recuperar sozinho buscando o estado no meio da chamada — essa recuperação sob demanda existiu numa rodada anterior do design e foi removida por causar bugs de concorrência difíceis de raciocinar (ver histórico de `mergeSessionState` em `store.ts`). O app consumidor deve tratar `sessionState !== null` como pré-condição pra habilitar o controle de edição, com a mesma disciplina já esperada pra `isBusy`.
+
 ## 8. Optimistic update, serialização de escrita e falha
 
 - **Optimistic:** o merge é computado e aplicado no `sessionState` local **sincronamente**, antes de qualquer chamada de rede — resposta instantânea do botão +/-.

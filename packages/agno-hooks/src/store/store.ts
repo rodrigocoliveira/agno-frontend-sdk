@@ -53,9 +53,8 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   let error: Error | null = null
   let sessionState: Record<string, unknown> | null = null
   // True once some value more authoritative than the initial `hydrate()` seed exists: a terminal run
-  // event, a successful manual merge, or a seed `mergeSessionState` fetched on demand. Any of those is
-  // newer than the parallel `hydrate()` fetch, so a still-pending `hydrate()` response must not
-  // overwrite it when it finally lands.
+  // event or a successful manual merge. Either is newer than the parallel `hydrate()` fetch, so a
+  // still-pending `hydrate()` response must not overwrite it when it finally lands.
   let sessionStateSeeded = false
   let destroyed = false
   let localSeq = 0
@@ -368,23 +367,31 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     // session must block a manual edit, regardless of who is driving it.
     if (runs.some((r) => r.status === 'running' || r.status === 'paused')) throw new Error('A run is already active')
     if (!sessionId) throw new Error('mergeSessionState requires an active session — send a message first')
+    // No on-demand seeding: the caller must gate the edit control on `sessionState !== null` the same way
+    // it already gates on `isBusy`/`status === 'loading'` — trying to recover here by fetching mid-merge
+    // is what caused the concurrency bugs this design used to have (see git history on this function).
+    if (sessionState === null) throw new Error('mergeSessionState requires session_state to be loaded — check sessionState !== null before calling it')
     const sid = sessionId
-
-    /** Applies the patch to `current`, commits it, and PATCHes it to the server (with failure-resync). */
-    async function commitAndPatch(current: Record<string, unknown>): Promise<void> {
-      const resolved = typeof patch === 'function' ? patch(current) : patch
-      const next = deepMerge(current, resolved)
-      sessionState = next
-      // Same guard hydrate()'s sessions.get callback checks: this optimistic write is authoritative, so a
-      // slower, stale hydrate() fetch resolving afterward must not clobber it either.
-      sessionStateSeeded = true
-      commit()
+    const resolved = typeof patch === 'function' ? patch(sessionState) : patch
+    const next = deepMerge(sessionState, resolved)
+    sessionState = next
+    // Same guard hydrate()'s sessions.get callback checks: this optimistic write is authoritative, so a
+    // slower, stale hydrate() fetch resolving afterward must not clobber it either.
+    sessionStateSeeded = true
+    commit()
+    // `stateWritesInFlight` is counted (not just queued) so `pendingStateWrites()` (used by send()/
+    // continueRun()/resume()) can tell "nothing outstanding" from "a write is in flight" — a run must not
+    // open while this whole-field write is still on the wire, or one of the two could silently clobber the
+    // other's session_state change. Merge computation above is always synchronous now (sessionState is
+    // guaranteed non-null past the guards), so only the network PATCH needs to go through the queue.
+    stateWritesInFlight++
+    const run = stateWriteQueue.then(async () => {
       try {
         await options.api.sessions.update(sid, { session_state: next })
       } catch (err) {
-        // Best-effort resync from the server. Anything queued behind this failed write computes its own
-        // merge only when the queue reaches it (see the slow path below), so it composes onto this fresh
-        // value — the resync rebases the rest of the queue for free.
+        // Best-effort resync from the server; note this does NOT rebase any writes already queued behind
+        // this failed one (they were precomputed from the pre-failure `sessionState`, not from this fresh
+        // value) — a deliberately deferred limitation of a queue that stores full states, not patches.
         try {
           const session = await options.api.sessions.get(sid)
           const state = (session as { session_state?: unknown }).session_state
@@ -392,66 +399,10 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
         } catch { /* melhor esforço: mantém o que já tinha localmente */ }
         commit()
         throw err
-      }
-    }
-
-    // `stateWritesInFlight` is counted (not just queued) so `pendingStateWrites()` can tell "nothing
-    // outstanding" from "a write is in flight", and keep the no-write path of send()/continue()/resume()
-    // synchronous. Both the count and the queue tail must be updated synchronously, before ANY await —
-    // the seed fetch below included: a merge parked on its own seed is every bit as outstanding as one
-    // parked on its PATCH, and if it were invisible to pendingStateWrites() a run could open alongside
-    // it, letting the run's server-side `session_state` changes and this whole-field write clobber each
-    // other.
-    if (stateWritesInFlight === 0 && sessionState !== null) {
-      // FAST PATH: nothing else is queued or in flight, and there's nothing to seed — safe to compute
-      // and apply the merge synchronously, right here, so the caller's very next line already sees it
-      // (this is what keeps a rapid, isolated +/- click feeling instant). Only safe when idle: if
-      // anything were ahead of us in the queue, freezing our payload now — before that ahead-of-us work
-      // has applied its own result — would send payloads out of queue order and silently drop a patch.
-      const current = sessionState
-      stateWritesInFlight++
-      const run = commitAndPatch(current).finally(() => { stateWritesInFlight-- })
-      // The tail never rejects (so awaiting it elsewhere is safe) and only settles once this job's own
-      // count has been released, so a waiter never sees a phantom in-flight write.
-      stateWriteQueue = run.catch(() => {})
-      return run
-    }
-
-    // SLOW PATH: either something is already queued/in-flight (must wait our turn before we can even
-    // COMPUTE our merge, so we compose onto the right base and our payload lands in the right order), or
-    // `sessionState` hasn't been seeded yet (must fetch it first). The ENTIRE remaining sequence — seed if
-    // needed, merge, apply, PATCH — is the callback passed to `previousQueue.then(...)`, not a separate
-    // `await previousQueue` statement: a `.then()`-produced promise structurally cannot settle before its
-    // source resolves AND its callback completes, so there is no way for this job's published tail to
-    // settle early (a throw before the await would) or for its payload to be computed out of queue order.
-    const previousQueue = stateWriteQueue
-    stateWritesInFlight++
-    const runSeedMergeAndPatch = async () => {
-      try {
-        let current = sessionState
-        if (current === null) {
-          // The PATCH replaces the whole `session_state` field, never a delta — merging onto `{}` here
-          // would erase every server-side key the agent had written. `sessionState` is still null
-          // whenever hydrate()'s seed fetch has not landed (or failed — hydrate treats that as harmless),
-          // or the session was learned from a send() whose terminal event carried no state. Seed it from
-          // the server first; if that fetch fails too, let it reject rather than write a partial state.
-          const session = await options.api.sessions.get(sid)
-          const state = (session as { session_state?: unknown }).session_state
-          // A terminal event, or whatever the job ahead of us in the queue just applied, may have landed
-          // a fresher value while this fetch was in flight; prefer the live one over what THIS fetch saw.
-          current = sessionState ?? (isPlainObject(state) ? state : {})
-        }
-        await commitAndPatch(current)
       } finally {
         stateWritesInFlight--
       }
-    }
-    // `previousQueue` is designed to never reject (every value ever assigned to `stateWriteQueue` is
-    // either `Promise.resolve()` or `someRun.catch(() => {})`), so passing the same callback as both the
-    // resolve AND reject handler is belt-and-suspenders: if that invariant were ever violated by a future
-    // change elsewhere in this file, the decrement above would still run instead of permanently stranding
-    // `stateWritesInFlight` above 0 and wedging every future send()/resume()/continueRun().
-    const run = previousQueue.then(runSeedMergeAndPatch, runSeedMergeAndPatch)
+    })
     stateWriteQueue = run.catch(() => {})
     return run
   }

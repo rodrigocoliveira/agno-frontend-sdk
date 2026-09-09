@@ -126,28 +126,27 @@ plus `store` itself (the underlying `AgnoStore<K>`, for code that needs `setFron
   primitives replace wholesale (a list is recomputed and passed as a new array, never merged
   element by element); `null` sets a key rather than deleting it. Pass either a patch object or an
   updater function receiving the current state — the updater form is what you want whenever the new
-  value depends on the old one. The merge is applied to `sessionState` synchronously — the button
-  reacts instantly — as long as the state has already been seeded (the common case: the session was
-  loaded, or a run's terminal event carried it) **and** no earlier edit of yours is still
-  outstanding, which is what an isolated +/- click looks like. Otherwise the merge is computed only
-  when its turn comes: if the state has not been seeded, one `GET /sessions/{id}` happens first, so
-  that the **complete** server state is what the patch merges onto instead of an empty object; and
-  if an earlier edit is still outstanding, this one waits for it, so it composes onto that edit's
-  result instead of onto a state that predates it. Either way the resulting complete state is then
+  value depends on the old one. The merge is always applied to `sessionState` synchronously — the
+  button reacts instantly, no round trip involved — and the resulting complete state is then
   `PATCH`ed to the server; concurrent calls are serialized, so two `PATCH /sessions/{id}` are never
   in flight at once and they carry the edits in call order, for calls made through the normal
   `send`/`mergeSessionState`/etc. API — not from inside a store `subscribe()` listener, which runs
-  synchronously during a commit and can re-enter before the write queue has published its new tail. The
-  returned promise rejects if that write fails (the store resyncs `sessionState` from the server
-  first), and it throws before touching the network if the store is destroyed, if there is no
-  session yet (nothing exists to patch until the first run), or if **any** run is `running` or
-  `paused` for this session — a stricter rule than `isBusy`, see
+  synchronously during a commit and can re-enter before the write queue has published its new tail.
+  A write already queued behind one that failed does **not** rebase onto the post-failure resync:
+  its payload was computed synchronously, at call time, before the failure was known, so it still
+  carries the pre-failure state it was built from — a documented limitation of a queue that stores
+  full states, not patches. The returned promise rejects if the write fails (the store resyncs
+  `sessionState` from the server first), and it throws before touching the network if the store is
+  destroyed, if there is no session yet (nothing exists to patch until the first run), if `sessionState`
+  is still `null` (has not been loaded — same as `isBusy`, gate the control on `sessionState !== null`
+  rather than relying on a rejection), or if **any** run is `running` or `paused` for this session — a
+  stricter rule than `isBusy`, see
   [concepts/lifecycle.md](../concepts/lifecycle.md#manual-session-state-edits). Handle the
   rejection; it is how the UI learns the edit did not stick:
 
   ```tsx
   <button
-    disabled={chat.isBusy}
+    disabled={chat.isBusy || chat.sessionState === null}
     onClick={() => chat.mergeSessionState((current) => ({
       items: (current.items as Item[]).map((i) => (i.id === id ? { ...i, qty: i.qty + 1 } : i)),
     })).catch((e) => toast.error(String(e)))}

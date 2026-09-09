@@ -40,10 +40,11 @@ reattached from another tab, say. `isBusy` deliberately ignores those for `send`
 still mutate `session_state` server-side at any moment, and a manual edit sends the whole field, so
 letting the two overlap would lose one side's changes. The reverse direction is covered too:
 `send`, `continue` and `resume` wait for every outstanding manual write to land before opening the
-run, so a pre-run snapshot cannot overwrite what the run is about to write. A write counts as
-outstanding from the moment `mergeSessionState` is called — while it waits its turn behind an
-earlier edit, and while it fetches the state it will merge onto, both of which happen before there
-is any `PATCH` yet to wait for.
+run, so a pre-run snapshot cannot overwrite what the run is about to write. The merge itself is
+always applied synchronously (`mergeSessionState` throws if `sessionState` hasn't loaded yet rather
+than trying to recover — see the reference), so a write counts as outstanding from the moment the
+call returns, before its `PATCH` has even reached the network, all the way until that `PATCH`
+settles.
 
 One consequence worth knowing: a run stuck at `'running'` locally — its stream never settled
 properly — blocks manual edits indefinitely, since the store still counts it as active. The escape

@@ -494,6 +494,24 @@ describe('mergeSessionState (write)', () => {
     expect(m.calls).toHaveLength(0)
   })
 
+  test('lança se sessionState ainda não foi carregado, sem fazer nenhuma chamada de rede', async () => {
+    // The caller must gate the edit control on `sessionState !== null` the same way it already gates on
+    // `isBusy` — there is no on-demand recovery here anymore, just a throw, exactly like the no-session case.
+    const m = mockFetch((call) => {
+      if (call.url.includes('/sessions/s1/runs')) return json([])
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ detail: 'boom' }, 500)
+      throw new Error('unexpected ' + call.url)
+    })
+    const store = agentStore(m.fetch, { sessionId: 's1' })
+    await until(store, (s) => s.status === 'ready')
+    expect(store.getSnapshot().sessionState).toBeNull() // hydrate's seed failed; sessionState never loaded
+    const callsBefore = m.calls.length
+    await expect(store.mergeSessionState({ a: 1 })).rejects.toThrow(
+      'mergeSessionState requires session_state to be loaded — check sessionState !== null before calling it',
+    )
+    expect(m.calls).toHaveLength(callsBefore) // no PATCH, no extra GET
+  })
+
   test('chamadas concorrentes serializam: nunca dois PATCH em voo, merge local em ordem, total acumulado', async () => {
     // The first PATCH's response is held open, so "only one PATCH has reached the network" is checked
     // while it is provably still in flight — an implementation that fired both in parallel (no queue at
@@ -516,10 +534,10 @@ describe('mergeSessionState (write)', () => {
     await until(store, (s) => s.sessionState !== null)
     const p1 = store.mergeSessionState({ count: 1 })
     const p2 = store.mergeSessionState((current) => ({ count: (current.count as number) + 10 }))
-    // Só a PRIMEIRA chamada aplica de forma síncrona (a fila estava ociosa, então não havia nada na
-    // frente dela cujo resultado pudesse ser pulado). A segunda tem que esperar a vez: calcular a merge
-    // agora seria congelar um payload construído ANTES do que está na frente dela na fila aplicar o dele.
-    expect(store.getSnapshot().sessionState).toEqual({ count: 1 })
+    // Merge computation is always synchronous now: both calls already applied their merge, in order,
+    // before either PATCH has resolved (or even before the microtask queue has had a chance to run) —
+    // only the network PATCH is serialized through the queue below.
+    expect(store.getSnapshot().sessionState).toEqual({ count: 11 })
     await wait(10) // tempo de sobra pra um despacho paralelo (incorreto) acontecer
     expect(m.calls.filter((c) => c.init.method === 'PATCH')).toHaveLength(1) // exclusão mútua: o PATCH de p2 ainda não saiu
     gate.release()
@@ -534,8 +552,7 @@ describe('mergeSessionState (write)', () => {
     const patchBodies: unknown[] = []
     const m = mockFetch((call) => {
       if (call.url.includes('/sessions/s1/runs')) return json([])
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET')
-        return json({ session_id: 's1', session_state: failNext ? { count: 0 } : { count: 99, srvOnly: 'x' } })
+      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ session_id: 's1', session_state: { count: failNext ? 0 : 99 } })
       if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH') {
         if (failNext) { failNext = false; return json({ detail: 'boom' }, 500) }
         const state = JSON.parse(String(call.init.body)).session_state
@@ -550,205 +567,63 @@ describe('mergeSessionState (write)', () => {
     const p2 = store.mergeSessionState({ count: 2 }) // enfileirada ANTES de p1 falhar — sem await entre as duas
     await expect(p1).rejects.toThrow()
     await p2 // a fila não trava: a escrita que já estava atrás da que falhou saiu mesmo assim
-    // A escrita enfileirada só calcula a própria merge quando chega a vez dela — ou seja, DEPOIS do
-    // resync — então ela compõe em cima do estado fresco do servidor (`srvOnly`) em vez de em cima do
-    // otimista pré-falha. O resync rebaseia o resto da fila de graça.
-    expect(patchBodies).toEqual([{ count: 2, srvOnly: 'x' }])
-    expect(store.getSnapshot().sessionState).toEqual({ count: 2, srvOnly: 'x' })
+    expect(patchBodies).toEqual([{ count: 2 }])
+    // Resincronizado do servidor, não preso no otimista {count:1}. A escrita já enfileirada NÃO é
+    // rebaseada em cima do resync (limitação deliberada, documentada em mergeSessionState): seu payload
+    // já tinha sido calculado, de forma síncrona, no momento da chamada — antes da falha ser conhecida —
+    // então o valor local reflete o resync, e não o {count:2} que acabou de ir pro servidor.
+    expect(store.getSnapshot().sessionState).toEqual({ count: 99 })
     // Uma chamada nova parte do estado resincronizado.
     await store.mergeSessionState({ extra: true })
-    expect(store.getSnapshot().sessionState).toEqual({ count: 2, srvOnly: 'x', extra: true })
+    expect(store.getSnapshot().sessionState).toEqual({ count: 99, extra: true })
   })
 
-  test('com sessionState ainda null, faz o seed do servidor antes de mesclar — nunca faz PATCH só das chaves do patch', async () => {
-    // The PATCH is a whole-field replacement, so merging onto `{}` would erase every server-side key
-    // the agent had written. `sessionState` is null here for the reason the hydrate suite calls
-    // harmless: the seed GET failed (500). The next GET — mergeSessionState's own — succeeds.
-    let gets = 0
-    const m = mockFetch((call) => {
-      if (call.url.includes('/sessions/s1/runs')) return json([])
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') {
-        gets++
-        return gets === 1 ? json({ detail: 'boom' }, 500) : json({ session_id: 's1', session_state: { count: 7, agentWrote: 'keep me' } })
-      }
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH')
-        return json({ session_id: 's1', session_state: JSON.parse(String(call.init.body)).session_state })
-      throw new Error('unexpected ' + call.url)
-    })
-    const store = agentStore(m.fetch, { sessionId: 's1' })
-    await until(store, (s) => s.status === 'ready' && gets === 1)
-    expect(store.getSnapshot().sessionState).toBeNull()
-    await store.mergeSessionState({ count: 8 })
-    expect(store.getSnapshot().sessionState).toEqual({ count: 8, agentWrote: 'keep me' })
-    const patchCall = m.calls.find((c) => c.url.endsWith('/sessions/s1') && c.init.method === 'PATCH')!
-    expect(JSON.parse(String(patchCall.init.body)).session_state).toEqual({ count: 8, agentWrote: 'keep me' })
-  })
-
-  test('duas merges concorrentes com sessionState null compõem em ordem — o último PATCH carrega as duas', async () => {
-    // Each call takes its slot in the PATCH queue synchronously, at call time, but freezes the whole-field
-    // payload it sends only once it has a base to merge onto. If those two orders can disagree — a seed
-    // fetch per call, answering out of order — the write that lands LAST carries a state built BEFORE the
-    // one ahead of it, silently dropping that patch server-side while the local state still shows both.
-    // Releasing every outstanding on-demand seed newest-first is the interleaving that exposes it.
-    const releases: (() => void)[] = []
-    let gets = 0
-    const patchBodies: unknown[] = []
-    const m = mockFetch((call) => {
-      if (call.url.includes('/sessions/s1/runs')) return json([])
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') {
-        // GET #1 is hydrate()'s seed, failing the way hydrate treats as harmless: `sessionState` stays null.
-        if (++gets === 1) return json({ detail: 'boom' }, 500)
-        const d = deferred()
-        releases.push(d.release)
-        return d.promise.then(() => json({ session_id: 's1', session_state: { srv: 'keep me' } }))
-      }
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH') {
-        const state = JSON.parse(String(call.init.body)).session_state
-        patchBodies.push(state)
-        return json({ session_id: 's1', session_state: state })
-      }
-      throw new Error('unexpected ' + call.url)
-    })
-    const store = agentStore(m.fetch, { sessionId: 's1' })
-    await until(store, (s) => s.status === 'ready' && gets === 1)
-    expect(store.getSnapshot().sessionState).toBeNull()
-    const p1 = store.mergeSessionState({ a: 1 })
-    const p2 = store.mergeSessionState({ b: 2 })
-    await until(store, () => releases.length >= 1)
-    await wait(10) // tempo de sobra pra uma segunda busca de seed (uma implementação sem dedupe) sair
-    for (const release of [...releases].reverse()) release() // o seed mais novo responde primeiro
-    await Promise.all([p1, p2])
-    expect(store.getSnapshot().sessionState).toEqual({ srv: 'keep me', a: 1, b: 2 })
-    // Cada PATCH leva o total daquele momento, em ordem de chamada — e o último, que é o que fica valendo
-    // no servidor, tem as duas edições e a chave que só existia lá.
-    expect(patchBodies).toEqual([{ srv: 'keep me', a: 1 }, { srv: 'keep me', a: 1, b: 2 }])
-  })
-
-  test('uma merge parada no seed não deixa uma merge posterior congelar payload na frente dela', async () => {
-    // Bug A: a merge that starts with `sessionState` null takes its queue slot at call time but can only
-    // build its payload once its seed lands. If a LATER call — one that finds `sessionState` already
-    // non-null (here because hydrate()'s own fetch landed meanwhile) — were allowed to freeze its payload
-    // synchronously, that payload would be built BEFORE the parked merge applied its patch, yet PATCHed
-    // AFTER it: the parked merge's edit would be silently dropped server-side while local state showed both.
-    const hydrateGate = deferred()
-    const seedGate = deferred()
-    let gets = 0
-    let patchesInFlight = 0
-    let maxPatchesInFlight = 0
-    const patchBodies: unknown[] = []
-    const m = mockFetch((call) => {
-      if (call.url.includes('/sessions/s1/runs')) return json([])
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') {
-        const body = () => json({ session_id: 's1', session_state: { srv: 'keep me' } })
-        // GET #1 is hydrate()'s seed (held open); GET #2 is the first merge's own on-demand seed.
-        return ++gets === 1 ? hydrateGate.promise.then(body) : seedGate.promise.then(body)
-      }
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH') {
-        const state = JSON.parse(String(call.init.body)).session_state
-        patchBodies.push(state)
-        maxPatchesInFlight = Math.max(maxPatchesInFlight, ++patchesInFlight)
-        return wait(5).then(() => { patchesInFlight--; return json({ session_id: 's1', session_state: state }) })
-      }
-      throw new Error('unexpected ' + call.url)
-    })
-    const store = agentStore(m.fetch, { sessionId: 's1' })
-    await until(store, () => gets === 1)
-    expect(store.getSnapshot().sessionState).toBeNull()
-    const pA = store.mergeSessionState({ a: 1 })   // parte com sessionState null: fica parada no próprio seed
-    await until(store, () => gets === 2)           // o seed de A está comprovadamente em voo
-    hydrateGate.release()
-    await until(store, (s) => s.sessionState !== null) // agora existe base local — mas A ainda está parada
-    const pB = store.mergeSessionState({ b: 2 })   // NÃO pode congelar payload agora: A está na frente na fila
-    await wait(10)
-    expect(m.calls.filter((c) => c.init.method === 'PATCH')).toHaveLength(0) // nada saiu enquanto A está parada
-    seedGate.release()
-    await Promise.all([pA, pB])
-    // Ordem de payload == ordem de fila: o PATCH que fica valendo no servidor tem as DUAS edições.
-    expect(patchBodies).toEqual([{ srv: 'keep me', a: 1 }, { srv: 'keep me', a: 1, b: 2 }])
-    expect(store.getSnapshot().sessionState).toEqual({ srv: 'keep me', a: 1, b: 2 })
-    expect(maxPatchesInFlight).toBe(1)
-  })
-
-  test('uma merge que lança antes do PATCH não libera a fila cedo demais', async () => {
-    // Bug B: awaiting `previousQueue` as a statement positioned after work that can throw lets a throwing
-    // job reject WITHOUT ever having awaited it — so its published queue tail settles immediately and the
-    // next job's PATCH goes out alongside the one still in flight ahead of it.
-    const gate = deferred()
-    let patchesInFlight = 0
-    let maxPatchesInFlight = 0
-    const patchBodies: unknown[] = []
+  test('uma merge que lança antes do PATCH rejeita sem tocar na fila de escrita', async () => {
+    // With merge computation always synchronous now (sessionState is guaranteed non-null past the
+    // guards), a throwing updater throws before `stateWritesInFlight`/`stateWriteQueue` are ever
+    // touched — there is nothing to queue and nothing that can settle early (the old "Bug B" scenario,
+    // where a throwing job could still be mid-seed when it threw, no longer applies).
     const m = mockFetch((call) => {
       if (call.url.includes('/sessions/s1/runs')) return json([])
       if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ session_id: 's1', session_state: { count: 0 } })
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH') {
-        const state = JSON.parse(String(call.init.body)).session_state
-        const isFirst = patchBodies.length === 0
-        patchBodies.push(state)
-        maxPatchesInFlight = Math.max(maxPatchesInFlight, ++patchesInFlight)
-        const body = () => { patchesInFlight--; return json({ session_id: 's1', session_state: state }) }
-        return isFirst ? gate.promise.then(body) : Promise.resolve().then(body)
-      }
       if (call.url.endsWith('/agents/a/runs')) return frames([started('r1', 's1'), completed('r1', 'ok', 1)])
       throw new Error('unexpected ' + call.url)
     })
     const store = agentStore(m.fetch, { sessionId: 's1' })
     await until(store, (s) => s.sessionState !== null)
-    const p1 = store.mergeSessionState({ count: 1 })                       // PATCH represado no gate
-    const p2 = store.mergeSessionState(() => { throw new Error('updater boom') }) // lança ao calcular a merge
-    const p3 = store.mergeSessionState({ c: 3 })                           // atrás das duas
-    let p2Err: unknown = 'ainda não settled'
-    p2.catch((e) => { p2Err = e })
-    await wait(10)
-    // p2 nem chegou a calcular a merge ainda: sua vez na fila só chega quando o PATCH de p1 aterrissar.
-    expect(p2Err).toBe('ainda não settled')
-    // E, como p2 não pode liberar a fila cedo, o PATCH de p3 não sai enquanto o de p1 está em voo.
-    expect(m.calls.filter((c) => c.init.method === 'PATCH')).toHaveLength(1)
-    gate.release()
-    await expect(p2).rejects.toThrow('updater boom')
-    await Promise.all([p1, p3])
-    expect(patchBodies).toEqual([{ count: 1 }, { count: 1, c: 3 }])
-    expect(store.getSnapshot().sessionState).toEqual({ count: 1, c: 3 })
-    expect(maxPatchesInFlight).toBe(1)
-    // Nada ficou preso: o contador de escritas voltou a zero, então send() volta a abrir a run de forma
-    // síncrona (é exatamente isso que `pendingStateWrites() === null` habilita).
+    const callsBefore = m.calls.length
+    await expect(store.mergeSessionState(() => { throw new Error('updater boom') })).rejects.toThrow('updater boom')
+    expect(m.calls).toHaveLength(callsBefore) // no PATCH was ever built
+    // Nothing was left counted as in flight: send() opens its run synchronously right away, which is
+    // exactly what `pendingStateWrites() === null` enables.
     const pSend = store.send('hi')
     expect(store.getSnapshot().isBusy).toBe(true)
     await pSend
   })
 
-  test('com sessionState null e o seed sob demanda também falhando, rejeita sem nenhum PATCH', async () => {
-    const m = mockFetch((call) => {
-      if (call.url.includes('/sessions/s1/runs')) return json([])
-      if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') return json({ detail: 'boom' }, 500)
-      throw new Error('unexpected ' + call.url)
-    })
-    const store = agentStore(m.fetch, { sessionId: 's1' })
-    await until(store, (s) => s.status === 'ready')
-    await expect(store.mergeSessionState({ count: 1 })).rejects.toThrow('boom')
-    expect(m.calls.some((c) => c.init.method === 'PATCH')).toBe(false)
-    expect(store.getSnapshot().sessionState).toBeNull() // nada de estado parcial inventado
-  })
-
   test('a merge survives a slower, stale hydrate() fetch landing afterward', async () => {
+    // sessionState becomes non-null via a terminal run event (not via hydrate's own fetch, which is
+    // held open here), the same way an event-driven update always wins over a slower hydrate() — see
+    // the read-side test above. The merge that follows must survive that stale response too.
     const gate = deferred()
     let gets = 0
     const m = mockFetch((call) => {
       if (call.url.includes('/sessions/s1/runs')) return json([])
       if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') {
-        // The FIRST GET is hydrate()'s seed: held open until this test releases it, so it is
-        // provably still in flight while the merge below happens. mergeSessionState's own on-demand
-        // seed (the second GET) answers immediately.
         gets++
-        const body = () => json({ session_id: 's1', session_state: { count: 1 } })
-        return gets === 1 ? gate.promise.then(body) : body()
+        return gate.promise.then(() => json({ session_id: 's1', session_state: { count: 1 } }))
       }
       if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH')
         return json({ session_id: 's1', session_state: JSON.parse(String(call.init.body)).session_state })
+      if (call.url.endsWith('/agents/a/runs'))
+        return frames([started('r1', 's1'), { event: 'RunCompleted', run_id: 'r1', content: 'ok', event_index: 1, session_state: { count: 2 } } as AnyEvent])
       throw new Error('unexpected ' + call.url)
     })
     const store = agentStore(m.fetch, { sessionId: 's1' })
-    await until(store, () => gets === 1)
-    expect(store.getSnapshot().sessionState).toBeNull() // hydrate's seed has not landed
+    await until(store, (s) => s.status === 'ready' && gets === 1)
+    expect(store.getSnapshot().sessionState).toBeNull() // hydrate's seed has not landed yet
+    await store.send('hi')
+    expect(store.getSnapshot().sessionState).toEqual({ count: 2 })
     await store.mergeSessionState({ count: 5 })
     expect(store.getSnapshot().sessionState).toEqual({ count: 5 })
     // Only now does hydrate()'s stale response arrive; it must not clobber the merge's result.
@@ -789,50 +664,6 @@ describe('mergeSessionState (write)', () => {
       await Promise.all([pMerge, pSend])
       expect(m.calls.some((c) => c.url.endsWith('/agents/a/runs'))).toBe(true)
       // The run's terminal event is the last word on session_state, not the merge that preceded it.
-      expect(store.getSnapshot().sessionState).toEqual({ count: 42 })
-    })
-
-    test('send() espera mesmo quando a escrita ainda está buscando o seed (sessionState null)', async () => {
-      // The window the counter used to miss entirely: `mergeSessionState` with `sessionState` still null
-      // has to GET the session before it can merge, and while it is parked on that fetch it is just as
-      // outstanding as one parked on its PATCH — the run it lets through would race the merge's own
-      // whole-field write. The seed GET is gated, so the merge is provably still mid-seed when send()
-      // is called; no PATCH has even been built yet.
-      const seed = deferred()
-      let gets = 0
-      const m = mockFetch((call) => {
-        if (call.url.includes('/sessions/s1/runs')) return json([])
-        if (call.url.endsWith('/sessions/s1') && call.init.method === 'GET') {
-          gets++
-          // GET #1 is hydrate()'s seed: it fails, which hydrate treats as harmless — that is exactly how
-          // `sessionState` legitimately stays null on a ready store. GET #2 is the merge's own seed.
-          return gets === 1
-            ? json({ detail: 'boom' }, 500)
-            : seed.promise.then(() => json({ session_id: 's1', session_state: { count: 0, agentWrote: 'keep me' } }))
-        }
-        if (call.url.endsWith('/sessions/s1') && call.init.method === 'PATCH') return json({ session_id: 's1', session_state: stateOf(call) })
-        if (call.url.endsWith('/agents/a/runs'))
-          return frames([started('r1', 's1'), { event: 'RunCompleted', run_id: 'r1', content: 'ok', event_index: 1, session_state: { count: 42 } } as AnyEvent])
-        throw new Error('unexpected ' + call.url)
-      })
-      const store = agentStore(m.fetch, { sessionId: 's1' })
-      await until(store, (s) => s.status === 'ready' && gets === 1)
-      expect(store.getSnapshot().sessionState).toBeNull()
-      const pMerge = store.mergeSessionState({ count: 1 })
-      await until(store, () => gets === 2) // o seed do merge está comprovadamente em voo
-      const pSend = store.send('hi')
-      await wait(10) // tempo de sobra pra uma run (incorretamente) despachada acontecer
-      expect(m.calls.some((c) => c.url.endsWith('/agents/a/runs'))).toBe(false) // run not opened yet
-      expect(m.calls.some((c) => c.init.method === 'PATCH')).toBe(false) // e o PATCH nem foi montado ainda
-      seed.release()
-      await Promise.all([pMerge, pSend])
-      const patchAt = m.calls.findIndex((c) => c.init.method === 'PATCH')
-      const runAt = m.calls.findIndex((c) => c.url.endsWith('/agents/a/runs'))
-      expect(patchAt).toBeGreaterThanOrEqual(0)
-      expect(runAt).toBeGreaterThan(patchAt) // a run só abriu depois que a escrita manual aterrissou
-      // Nada foi apagado em nenhuma das duas direções: o PATCH levou o estado completo do servidor
-      // (`agentWrote`), e o evento terminal da run é a última palavra sobre `session_state`.
-      expect(stateOf(m.calls[patchAt]!)).toEqual({ count: 1, agentWrote: 'keep me' })
       expect(store.getSnapshot().sessionState).toEqual({ count: 42 })
     })
 
