@@ -366,10 +366,11 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     patch: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown>),
   ): Promise<void> {
     if (destroyed) throw new Error('Store destroyed')
-    // Stricter than `snapshot.isBusy`: a run this client merely reattached to (never taken over via
-    // resume()/continue(), so `local` is false and `isBusy` — deliberately — ignores it for `send()`)
-    // can still have `session_state` mutated server-side at any moment. Any run running/paused for this
-    // session must block a manual edit, regardless of who is driving it.
+    // Deliberately ignores `local`, unlike `snapshot.isBusy`: hydrate() marks every reattached `running`
+    // row local today, but this check must keep holding even if that ever stops being true for some path
+    // (e.g. a paused row a live event flips back to running, which `replace()` reattaches without
+    // touching `local`). `session_state` can be mutated server-side by any running/paused run for this
+    // session, regardless of who is driving it — so a manual edit must block on that alone.
     if (runs.some((r) => r.status === 'running' || r.status === 'paused')) throw new Error('A run is already active')
     if (!sessionId) throw new Error('mergeSessionState requires an active session — send a message first')
     // No on-demand seeding: the caller must gate the edit control on `sessionState !== null` the same way
