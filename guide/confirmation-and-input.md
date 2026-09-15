@@ -178,7 +178,6 @@ agent = Agent(
     tools=[UserFeedbackTools(), collect_shipping_address],
     db=db,
     markdown=True,
-    add_history_to_context=True,
 )
 ```
 
