@@ -33,6 +33,17 @@ export const apiWith = (fetchFn: typeof fetch) => createAgnoApi({ baseUrl: 'http
 
 export const wait = (ms = 0) => new Promise<void>((r) => setTimeout(r, ms))
 
+/**
+ * A promise the test releases by hand. Gating a mocked response on one of these makes a race
+ * deterministic by construction: the response is provably still pending until `release()` is called,
+ * instead of merely being slower than the other path by a `wait(N)` bet that could go the other way.
+ */
+export function deferred(): { promise: Promise<void>; release: () => void } {
+  let release!: () => void
+  const promise = new Promise<void>((r) => { release = r })
+  return { promise, release }
+}
+
 /** Polls a store until `pred(snapshot)` is true (or times out). */
 export async function until<T>(store: { getSnapshot(): T }, pred: (s: T) => boolean, timeoutMs = 2000): Promise<T> {
   const start = Date.now()

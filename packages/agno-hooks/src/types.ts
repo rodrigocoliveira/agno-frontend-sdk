@@ -93,6 +93,7 @@ export interface Snapshot<K extends Kind> {
   pending: Pending<K> | null
   isBusy: boolean
   error: Error | null
+  sessionState: Record<string, unknown> | null
 }
 
 export type FrontendTool = (

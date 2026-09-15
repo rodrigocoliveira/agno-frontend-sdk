@@ -19,6 +19,7 @@ export interface AgnoHook<K extends Kind> extends Snapshot<K> {
   runTools: AgnoStore<K>['runTools']
   resume: AgnoStore<K>['resume']
   cancel: AgnoStore<K>['cancel']
+  mergeSessionState: AgnoStore<K>['mergeSessionState']
   store: AgnoStore<K>
 }
 
@@ -27,7 +28,7 @@ export interface AgentHookOptions extends CommonOptions { agentId: string }
 export interface TeamHookOptions extends CommonOptions { teamId: string }
 export interface WorkflowHookOptions extends Omit<CommonOptions, 'frontendTools'> { workflowId: string }
 
-const SERVER_SNAPSHOT = { status: 'loading', sessionId: null, runs: [], pending: null, isBusy: false, error: null } as const
+const SERVER_SNAPSHOT = { status: 'loading', sessionId: null, runs: [], pending: null, isBusy: false, error: null, sessionState: null } as const
 
 function useAgnoStore<K extends Kind>(kind: K, targetId: string, opts: CommonOptions): AgnoHook<K> {
   const { api, registry } = useAgnoContext()
@@ -57,7 +58,7 @@ function useAgnoStore<K extends Kind>(kind: K, targetId: string, opts: CommonOpt
   return useMemo(() => ({
     ...snapshot,
     send: store.send, continue: store.continue, resolveTool: store.resolveTool, runTools: store.runTools,
-    resume: store.resume, cancel: store.cancel, store,
+    resume: store.resume, cancel: store.cancel, mergeSessionState: store.mergeSessionState, store,
   }), [snapshot, store])
 }
 

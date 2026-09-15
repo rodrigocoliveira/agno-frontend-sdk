@@ -1,0 +1,56 @@
+import { describe, expect, test } from 'bun:test'
+import { deepMerge, isPlainObject } from '../../src/utils/deep-merge'
+
+describe('isPlainObject', () => {
+  test('true só pra objeto literal; false pra array, null, Date, classe', () => {
+    expect(isPlainObject({})).toBe(true)
+    expect(isPlainObject({ a: 1 })).toBe(true)
+    expect(isPlainObject([1, 2])).toBe(false)
+    expect(isPlainObject(null)).toBe(false)
+    expect(isPlainObject(new Date())).toBe(false)
+    expect(isPlainObject('x')).toBe(false)
+    expect(isPlainObject(1)).toBe(false)
+  })
+})
+
+describe('deepMerge', () => {
+  test('mescla objetos planos em qualquer profundidade; chaves-irmãs sobrevivem', () => {
+    const base = { cart: { items: [{ id: 'a', qty: 1 }], delivery: { notes: 'x' }, _audit: { by: 'agent' } } }
+    const out = deepMerge(base, { cart: { items: [{ id: 'a', qty: 2 }] } })
+    expect(out).toEqual({ cart: { items: [{ id: 'a', qty: 2 }], delivery: { notes: 'x' }, _audit: { by: 'agent' } } })
+  })
+
+  test('array e primitivo substituem, não mesclam por índice', () => {
+    expect(deepMerge({ items: [1, 2, 3] }, { items: [9] })).toEqual({ items: [9] })
+    expect(deepMerge({ count: 1 }, { count: 2 })).toEqual({ count: 2 })
+  })
+
+  test('null seta a chave, não apaga', () => {
+    expect(deepMerge<Record<string, unknown>>({ a: { b: 1 } }, { a: null })).toEqual({ a: null })
+  })
+
+  test('chave nova é adicionada; troca de tipo objeto<->primitivo substitui', () => {
+    expect(deepMerge<Record<string, unknown>>({ a: 1 }, { b: 2 })).toEqual({ a: 1, b: 2 })
+    expect(deepMerge<Record<string, unknown>>({ a: { x: 1 } }, { a: 'now a string' })).toEqual({ a: 'now a string' })
+  })
+
+  test('`__proto__` no patch é ignorado: não vira acessor nem troca o protótipo do resultado', () => {
+    // `out['__proto__'] = value` dispara o setter herdado de Object.prototype em vez de criar uma
+    // propriedade própria — o merge resultante deixaria de ser um objeto plano (isPlainObject o
+    // rejeitaria depois) mesmo sem poluir nada global.
+    const out = deepMerge<Record<string, unknown>>({ a: 1 }, JSON.parse('{"__proto__": {"polluted": true}, "b": 2}'))
+    expect(isPlainObject(out)).toBe(true)
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype)
+    expect(Object.prototype.hasOwnProperty.call(out, '__proto__')).toBe(false)
+    expect(out).toEqual({ a: 1, b: 2 })
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+  })
+
+  test('não muta os argumentos', () => {
+    const base = { a: { b: 1 } }
+    const partial = { a: { c: 2 } }
+    deepMerge(base, partial)
+    expect(base).toEqual({ a: { b: 1 } })
+    expect(partial).toEqual({ a: { c: 2 } })
+  })
+})

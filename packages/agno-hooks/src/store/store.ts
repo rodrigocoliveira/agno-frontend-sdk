@@ -5,6 +5,7 @@ import {
   isTerminal, type AgentRun, type AnyEvent, type ContinueExtra, type Decision, type FrontendTool, type Kind, type Pending,
   type Run, type RunOf, type RunRowLike, type SendInput, type Snapshot, type Target, type TeamRun, type WorkflowRun,
 } from '../types'
+import { deepMerge, isPlainObject } from '../utils/deep-merge'
 import { routesFor } from './routes'
 import { runStream } from './stream'
 
@@ -30,6 +31,7 @@ export interface AgnoStore<K extends Kind> {
   runTools(runId?: string): Promise<void>
   resume(runId: string): Promise<void>
   cancel(runId?: string): Promise<void>
+  mergeSessionState(patch: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown>)): Promise<void>
   setFrontendTools(tools: Record<string, FrontendTool> | undefined): void
   destroy(): void
 }
@@ -49,8 +51,15 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   let status: Snapshot<K>['status'] = options.sessionId ? 'loading' : 'ready'
   let sessionId: string | null = options.sessionId ?? null
   let error: Error | null = null
+  let sessionState: Record<string, unknown> | null = null
+  // True once some value more authoritative than the initial `hydrate()` seed exists: a terminal run
+  // event or a successful manual merge. Either is newer than the parallel `hydrate()` fetch, so a
+  // still-pending `hydrate()` response must not overwrite it when it finally lands.
+  let sessionStateSeeded = false
   let destroyed = false
   let localSeq = 0
+  let stateWriteQueue: Promise<unknown> = Promise.resolve()
+  let stateWritesInFlight = 0
   const listeners = new Set<() => void>()
   const streams = new Map<string, AbortController>()     // keyed by the run's CURRENT id
   const toolAborts = new Map<string, AbortController>()
@@ -78,7 +87,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   const build = (): Snapshot<K> => ({
     status, sessionId, runs, pending: computePending(),
     isBusy: runs.some((r) => (r.local && r.status === 'running') || r.status === 'paused'),
-    error,
+    error, sessionState,
   })
   let snapshot: Snapshot<K> = build()
   function commit() {
@@ -88,6 +97,17 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   }
 
   const failRun = (run: RunOf<K>, err: unknown): RunOf<K> => ({ ...run, status: 'error', error: messageOf(err) })
+
+  /**
+   * The tail of the manual `session_state` write queue, or `null` when nothing is in flight or queued.
+   * A run must not start while a write is outstanding: that PATCH carries the complete PRE-run state, so
+   * letting it land after the run mutated `session_state` server-side would silently erase what the run
+   * wrote (`mergeSessionState`'s lock only covers the mirror image — an edit starting during a run).
+   * Returning `null` instead of an already-resolved promise keeps the common path free of even a
+   * microtask, so `send()` still creates its optimistic run — and flips `isBusy` — synchronously.
+   * The queue is built never to reject (every job is chained through `.catch`), so awaiting it is safe.
+   */
+  const pendingStateWrites = (): Promise<unknown> | null => (stateWritesInFlight > 0 ? stateWriteQueue : null)
 
   /**
    * A stream opened without `last_event_index` replays the run from its very first event, so whatever the
@@ -179,6 +199,8 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
           let next = applyEvent(run, ev)
           if (onAccepted && ACCEPTED.has(ev.event)) { next = onAccepted(next); onAccepted = undefined }
           if (typeof ev.event_index === 'number') next = { ...next, eventIndex: ev.event_index }
+          const evState = (ev as { session_state?: unknown }).session_state
+          if (isPlainObject(evState)) { sessionState = evState; sessionStateSeeded = true }
           replace(id, next)
           if (next.id !== id) { streams.delete(id); streams.set(next.id, ac); id = next.id }
           if (!sessionId && next.sessionId) sessionId = next.sessionId
@@ -209,6 +231,15 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
   async function hydrate(): Promise<void> {
     if (!sessionId) { status = 'ready'; commit(); return }
     status = 'loading'; commit()
+    const sid = sessionId
+    void options.api.sessions.get(sid).then((session) => {
+      // A fresher, event-driven sync (a terminal run event already updated `sessionState`) always wins
+      // over this fetch: it only seeds state before any interaction, so a late response here is stale.
+      if (destroyed || sessionId !== sid || sessionStateSeeded) return
+      const state = (session as { session_state?: unknown }).session_state
+      sessionState = isPlainObject(state) ? state : null
+      commit()
+    }).catch(() => { /* estado é auxiliar; falha aqui não derruba o hydrate */ })
     let rows: RunRowLike[]
     try {
       rows = (await options.api.sessions.runs(sessionId)) as unknown as RunRowLike[]
@@ -258,6 +289,14 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     if (destroyed) throw new Error('Store destroyed')
     if (status === 'loading') throw new Error('Session is still loading')
     if (snapshot.isBusy) throw new Error('A run is already active')
+    // Wait for any in-flight manual state write to land before starting a run, so its stale pre-run
+    // PATCH can't overwrite what this run is about to do to `session_state`.
+    const writes = pendingStateWrites()
+    if (writes) {
+      await writes
+      if (destroyed) throw new Error('Store destroyed')
+      if (snapshot.isBusy) throw new Error('A run is already active')
+    }
     const body = (typeof input === 'string' ? { message: input } : input) as Record<string, unknown>
     const runBackground = typeof body.background === 'boolean' ? body.background : background
     const id = `local-${++localSeq}`
@@ -275,8 +314,17 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
 
   async function resume(runId: string): Promise<void> {
     if (streams.has(runId)) return
-    const run = find(runId)
+    let run = find(runId)
     if (!run || run.status === 'completed' || run.status === 'cancelled' || isLocalId(run.id)) return
+    // Wait for any in-flight manual state write to land before starting a run, so its stale pre-run
+    // PATCH can't overwrite what this run is about to do to `session_state`.
+    const writes = pendingStateWrites()
+    if (writes) {
+      await writes
+      if (destroyed || streams.has(runId)) return
+      run = find(runId)
+      if (!run || run.status === 'completed' || run.status === 'cancelled') return
+    }
     // `local` is what `cancel()` and `isBusy` look for: a run this client is actively driving, whether it
     // was created here or picked up from history.
     replace(runId, { ...run, status: 'running', error: null, local: true }); commit()
@@ -312,6 +360,61 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
       replace(r.id, { ...r, status: 'cancelled' }); commit()
     }, cancelTimeoutMs)
     ;(timer as { unref?: () => void }).unref?.()
+  }
+
+  async function mergeSessionState(
+    patch: Record<string, unknown> | ((current: Record<string, unknown>) => Record<string, unknown>),
+  ): Promise<void> {
+    if (destroyed) throw new Error('Store destroyed')
+    // Stricter than `snapshot.isBusy`: a run this client merely reattached to (never taken over via
+    // resume()/continue(), so `local` is false and `isBusy` — deliberately — ignores it for `send()`)
+    // can still have `session_state` mutated server-side at any moment. Any run running/paused for this
+    // session must block a manual edit, regardless of who is driving it.
+    if (runs.some((r) => r.status === 'running' || r.status === 'paused')) throw new Error('A run is already active')
+    if (!sessionId) throw new Error('mergeSessionState requires an active session — send a message first')
+    // No on-demand seeding: the caller must gate the edit control on `sessionState !== null` the same way
+    // it already gates on `isBusy`/`status === 'loading'` — trying to recover here by fetching mid-merge
+    // is what caused the concurrency bugs this design used to have (see git history on this function).
+    if (sessionState === null) throw new Error('mergeSessionState requires session_state to be loaded — check sessionState !== null before calling it')
+    const sid = sessionId
+    const resolved = typeof patch === 'function' ? patch(sessionState) : patch
+    const next = deepMerge(sessionState, resolved)
+    sessionState = next
+    // Same guard hydrate()'s sessions.get callback checks: this optimistic write is authoritative, so a
+    // slower, stale hydrate() fetch resolving afterward must not clobber it either.
+    sessionStateSeeded = true
+    commit()
+    // `stateWritesInFlight` is counted (not just queued) so `pendingStateWrites()` (used by send()/
+    // continueRun()/resume()) can tell "nothing outstanding" from "a write is in flight" — a run must not
+    // open while this whole-field write is still on the wire, or one of the two could silently clobber the
+    // other's session_state change. Merge computation above is always synchronous now (sessionState is
+    // guaranteed non-null past the guards), so only the network PATCH needs to go through the queue.
+    stateWritesInFlight++
+    const runSeedAndPatch = async () => {
+      try {
+        await options.api.sessions.update(sid, { session_state: next })
+      } catch (err) {
+        // Best-effort resync from the server; note this does NOT rebase any writes already queued behind
+        // this failed one (they were precomputed from the pre-failure `sessionState`, not from this fresh
+        // value) — a deliberately deferred limitation of a queue that stores full states, not patches.
+        try {
+          const session = await options.api.sessions.get(sid)
+          const state = (session as { session_state?: unknown }).session_state
+          sessionState = isPlainObject(state) ? state : null
+        } catch { /* melhor esforço: mantém o que já tinha localmente */ }
+        commit()
+        throw err
+      } finally {
+        stateWritesInFlight--
+      }
+    }
+    // `stateWriteQueue` is designed to never reject (see its two assignment sites), so passing the same
+    // callback as both the resolve and reject handler is belt-and-suspenders: if that invariant were ever
+    // violated by a future change, the decrement above would still run instead of permanently stranding
+    // `stateWritesInFlight` above 0.
+    const run = stateWriteQueue.then(runSeedAndPatch, runSeedAndPatch)
+    stateWriteQueue = run.catch(() => {})
+    return run
   }
 
   // ---- HITL ----
@@ -355,6 +458,15 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
 
   async function continueRun(decisions: Decision<K>[], extra?: ContinueExtra<K>): Promise<void> {
     if (destroyed) throw new Error('Store destroyed')
+    // Wait for any in-flight manual state write to land before resuming a run, so its stale pre-run
+    // PATCH can't overwrite what this run is about to do to `session_state`. Reachable even though the
+    // merge lock blocks edits during a pause: the write can have started before hydrate() reported the
+    // already-paused run. `pending` is read after the await, so it is re-checked for free.
+    const writes = pendingStateWrites()
+    if (writes) {
+      await writes
+      if (destroyed) throw new Error('Store destroyed')
+    }
     const p = snapshot.pending
     if (!p) throw new Error('No paused run to continue')
     const run = asRun(find(p.runId)!)
@@ -483,7 +595,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     kind,
     getSnapshot: () => snapshot,
     subscribe: (l) => { listeners.add(l); return () => { listeners.delete(l) } },
-    send, continue: continueRun, resolveTool, runTools, resume, cancel,
+    send, continue: continueRun, resolveTool, runTools, resume, cancel, mergeSessionState,
     setFrontendTools: (t) => { frontendTools = t ?? {} },
     destroy,
   }
