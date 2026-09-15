@@ -746,7 +746,7 @@ describe('mergeSessionState (write)', () => {
     })
   })
 
-  test('throws when a run is running/paused for this session, even if reattached and not locally driven', async () => {
+  test('throws for a hydrate-reattached running row, same as any other running run', async () => {
     const live = openSse()
     const m = mockFetch((call) => {
       if (call.url.includes('/sessions/s1/runs')) return json([
@@ -758,9 +758,11 @@ describe('mergeSessionState (write)', () => {
     })
     const store = agentStore(m.fetch, { sessionId: 's1' })
     const s = await until(store, (s) => s.status === 'ready')
-    // Same setup as the hydrate describe block's first test: the row is reattached automatically, but
-    // never taken over via resume()/continue(), so `isBusy` (which send() relies on) stays false.
-    expect(s.isBusy).toBe(false)
+    // Same setup as the hydrate describe block's first test: a still-running row survives a reload as
+    // `local: true` (reattached, cancellable) — so `isBusy` alone already blocks this. The check below
+    // deliberately ignores `local` anyway (see its comment in store.ts), so this also covers that check
+    // agreeing with `isBusy` here, not just the narrower "isBusy is already true" case at line 506.
+    expect(s.isBusy).toBe(true)
     await expect(store.mergeSessionState({ a: 1 })).rejects.toThrow('A run is already active')
     expect(m.calls.some((c) => c.init.method === 'PATCH')).toBe(false)
     live.close()
