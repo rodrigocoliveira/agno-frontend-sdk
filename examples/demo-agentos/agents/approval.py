@@ -18,5 +18,4 @@ agent = Agent(
     tools=[issue_refund],
     db=db,
     markdown=True,
-    add_history_to_context=True,
 )
