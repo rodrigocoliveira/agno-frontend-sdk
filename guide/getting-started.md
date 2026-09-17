@@ -18,7 +18,7 @@ bun add @rodrigocoliveira/agno-hooks @rodrigocoliveira/agno-api react
 
 ## Run the demo server
 
-`examples/demo-agentos` is a real AgentOS `3.0.6` with agents, teams and workflows that exercise
+`examples/demo-agentos` is a real AgentOS `3.0.7` with agents, teams and workflows that exercise
 every feature of `@rodrigocoliveira/agno-hooks`.
 
 ```bash

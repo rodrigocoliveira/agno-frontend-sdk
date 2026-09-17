@@ -3,7 +3,7 @@ name = "demo-agentos"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-  "agno==3.0.6",
+  "agno==3.0.7",
   "fastapi",
   "uvicorn",
   "python-multipart",
