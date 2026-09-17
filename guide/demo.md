@@ -1,7 +1,7 @@
 # Demo map
 
 `examples/demo-react` is a real (if small) production-shaped app paired with `examples/demo-agentos`,
-a real AgentOS `3.0.6` server. Every screen in the demo exercises one or more features documented in
+a real AgentOS `3.0.7` server. Every screen in the demo exercises one or more features documented in
 this guide, and the demo's own catalog (`examples/demo-react/src/catalog.ts`) is the single source
 of truth for what each screen demonstrates — this page cross-references that catalog, and the app's
 source layout, to the guide's chapters.

@@ -16,7 +16,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agno", specifier = "==3.0.6" },
+    { name = "agno", specifier = "==3.0.7" },
     { name = "fastapi" },
     { name = "python-multipart" },
     { name = "sqlalchemy" },
@@ -25,7 +25,7 @@ requires-dist = [
 
 [[package]]
 name = "agno"
-version = "3.0.6"
+version = "3.0.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "agnoctl" },
@@ -39,9 +39,9 @@ dependencies = [
     { name = "rich" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/09/d6/6c5299c4bbb3c047a3641f83260185ae9fde3ef51fd18a9d54f794b2bd05/agno-3.0.6.tar.gz", hash = "sha256:1b8c2267b3090371f0a80ffd3b4fd7eaa584ea781c4d155bf79487d5451d19a8", size = 3414903, upload-time = "2026-09-04T13:07:41.735Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d2/94/5d023ff115836aa5e11ff97a1af74ead204d6ea338d5f84caaebfc7fd80e/agno-3.0.7.tar.gz", hash = "sha256:7b35034f4f23f6666b3206e3e126d8deaf65a0feac5fb784df904b9d915a43f1", size = 3469423, upload-time = "2026-09-08T10:37:40.191Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c0/0a/9854055c60d84694840a1f325d28b2f5d322022ceffd1b976c753be57f2f/agno-3.0.6-py3-none-any.whl", hash = "sha256:cd045e99f870123c0f7cdad13792a55e3941fd4e0fc3da6b743217f82177b06f", size = 3889033, upload-time = "2026-09-04T13:07:38.788Z" },
+    { url = "https://files.pythonhosted.org/packages/03/ab/94c979da1d341df45ae63f85a6dfabef44904c542991255583aa1cbc6430/agno-3.0.7-py3-none-any.whl", hash = "sha256:212fc7764a274f62af7a3f8971fe21991e9b9d298c9bf2f49e1906a975668f28", size = 3947907, upload-time = "2026-09-08T10:37:37Z" },
 ]
 
 [[package]]
