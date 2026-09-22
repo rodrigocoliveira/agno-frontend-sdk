@@ -1,10 +1,11 @@
 # Releasing
 
 Both packages (`@rodrigocoliveira/agno-api`, `@rodrigocoliveira/agno-hooks`) are published to npm
-from GitHub Actions. Nobody publishes from a laptop after the first release, and there is no npm
-token stored anywhere: npm trusts this repository's `release.yml` workflow directly (OIDC
-"trusted publishing"), and every published version carries a provenance attestation that links it
-back to the exact commit and workflow run.
+in two steps: GitHub Actions **stages** each new version on npm, and a maintainer **approves** it on
+npmjs.com with 2FA. Nothing goes live from a laptop or from CI alone. There is no npm token stored
+anywhere: npm trusts this repository's `release.yml` workflow directly (OIDC "trusted publishing"),
+and every version carries a provenance attestation that links it back to the exact commit and
+workflow run.
 
 ## Day-to-day: how a change reaches npm
 
@@ -17,11 +18,22 @@ back to the exact commit and workflow run.
    `bun.lock`, writes the CHANGELOGs and deletes the consumed changesets. Nothing is published yet.
    Keep merging feature PRs; the version PR is rebuilt on every push to `main`.
 3. **Review and merge the version PR** when you want to cut a release. The Release workflow now
-   finds no changesets and versions that are not on npm, so it builds, runs `changeset publish`,
-   pushes the `@rodrigocoliveira/agno-api@x.y.z` git tags and creates a GitHub release per package.
+   finds no changesets and versions that are not on npm, so it builds, runs `npm stage publish`
+   for each new version (`scripts/stage-release.ts`), pushes the `@rodrigocoliveira/agno-api@x.y.z`
+   git tags and creates a GitHub release per package.
+4. **Approve the staged versions** — this is the step that publishes. Either on npmjs.com →
+   your avatar → *Staged Packages* → *Approve* (asks for your 2FA code), or from a terminal:
 
-`changeset publish` skips any version that already exists on npm, so re-running the workflow is
-safe.
+   ```bash
+   npm stage list @rodrigocoliveira/agno-api      # shows the stage id
+   npm stage approve <stage-id>                    # asks for 2FA
+   ```
+
+   Until you approve, the version is not installable. `npm stage reject <stage-id>` throws it
+   away if something is wrong; fix it with a new changeset and a new version PR.
+
+The staging script skips versions already on npm and versions already staged, so every later push
+to `main` (which re-runs the workflow until you approve) is harmless.
 
 ## Versioning policy
 
@@ -41,6 +53,7 @@ safe.
 |---|---|
 | Unit + E2E tests, typecheck, generated code up to date | `ci.yml` on every PR and on `main` |
 | Human review of the exact versions and CHANGELOGs before anything is published | the version PR |
+| Human 2FA approval before a version goes live, even if CI or the repo is compromised | staged publishing (`npm stage publish` → approve on npmjs.com) |
 | No long-lived npm credential to leak | trusted publishing (OIDC), `permissions: {}` by default |
 | Provenance: npm shows which commit and workflow built each version | automatic with trusted publishing |
 | Only `dist/`, `README.md`, `LICENSE` in the tarball | `files` in each `package.json`; check with `npm pack --dry-run` |
@@ -78,13 +91,15 @@ the very first version of each package is published by hand, once.
    | Repository | `agno-frontend-sdk` |
    | Workflow filename | `release.yml` |
    | Environment | leave empty |
+   | Allow `npm publish` | **leave unchecked** — CI may only stage; a human approves |
 
-   Do this for `@rodrigocoliveira/agno-api` and `@rodrigocoliveira/agno-hooks`.
+   Do this for `@rodrigocoliveira/agno-api` and `@rodrigocoliveira/agno-hooks`. The connection
+   cannot be edited afterwards; to change it, delete it and create a new one.
 5. **Lock the packages down** (same settings page): set *Publishing access* to
    *Require two-factor authentication and disallow tokens*, so only trusted publishing and a
    2FA-authenticated human can publish. Revoke any npm automation tokens you no longer need.
 
-From the next changeset on, steps 1–3 of "Day-to-day" are the whole process.
+From the next changeset on, steps 1–4 of "Day-to-day" are the whole process.
 
 ## Manual fallback
 
@@ -93,9 +108,12 @@ If GitHub Actions is unavailable, a maintainer with 2FA can still run the same c
 ```bash
 bun run version          # apply changesets, bump versions, refresh bun.lock, write CHANGELOGs
 git commit -am "chore: version packages"
-bun run release          # build + changeset publish (asks for the 2FA code)
+bun run release          # build + changeset publish — direct publish, asks for the 2FA code
 git push --follow-tags
 ```
+
+`bun run release:stage` is the staged variant the workflow runs; it works locally too
+(npm >= 11.15, logged in) and can be rehearsed with `DRY_RUN=1 bun run release:stage`.
 
 ## Consuming the packages
 
