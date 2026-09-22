@@ -1,4 +1,4 @@
-# Mapa da API do AgentOS v3 (agno==3.0.7)
+# Mapa da API do AgentOS v3 (agno==3.0.10)
 
 Gerado do `openapi.json` de um AgentOS real (`SqliteDb`, 1 agent, 1 team), complementado com o que o OpenAPI não expressa: o transporte SSE, o union de eventos e os payloads de HITL. É a especificação de entrada do pacote `@rodrigocoliveira/agno-api`.
 
@@ -2972,7 +2972,7 @@ Erros documentados: `400`, `401`, `404`, `500`
 
 # Contrato de wire que o OpenAPI não expressa
 
-Tudo abaixo foi lido do código instalado (`agno==3.0.6`, reconfirmado sem diffs relevantes em `3.0.7`) e confirmado com captura ao vivo no AgentOS local. É o que o gerador de tipos não consegue produzir sozinho e precisa ser escrito à mão no `agno-api`.
+Tudo abaixo foi lido do código instalado (`agno==3.0.6`, reconfirmado sem diffs relevantes em `3.0.7` e `3.0.10`) e confirmado com captura ao vivo no AgentOS local. É o que o gerador de tipos não consegue produzir sozinho e precisa ser escrito à mão no `agno-api`.
 
 ## 1. Transporte de streaming: SSE sempre
 
