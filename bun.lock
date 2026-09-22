@@ -40,7 +40,7 @@
     },
     "packages/agno-api": {
       "name": "@rodrigocoliveira/agno-api",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "openapi-typescript": "^7.13.0",
         "tsup": "^8.5.1",
@@ -49,7 +49,7 @@
     },
     "packages/agno-hooks": {
       "name": "@rodrigocoliveira/agno-hooks",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "@happy-dom/global-registrator": "^17.4.4",
         "@rodrigocoliveira/agno-api": "workspace:*",

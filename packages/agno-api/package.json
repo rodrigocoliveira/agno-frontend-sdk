@@ -1,6 +1,6 @@
 {
   "name": "@rodrigocoliveira/agno-api",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Typed, stateless client for every AgentOS v3 route",
   "license": "MIT",
   "repository": {
