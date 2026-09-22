@@ -89,16 +89,10 @@ bun run demo:web                             # terminal 2 → http://localhost:5
 In the app open **Settings**, click **Fetch demo tokens** under "Quick demo login" and pick
 `User 1`. The Home page maps each demo target to the feature it shows and to its guide chapter.
 
-## Develop
+## Contributing
 
-```bash
-bun run build && bun run typecheck && bun run test          # unit
-AGNO_PORT=7778 bun run agentos                                # scripted E2E server (e2e/agentos)
-AGNO_URL=http://localhost:7778 bun run test:e2e               # E2E, no API key needed
-```
-
-Every PR that changes a package adds a changeset (`bun run changeset`). Publishing to npm is
-automated from `main` and approved by a maintainer — see [RELEASING.md](RELEASING.md).
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for setup, tests
+and changesets.
 
 ## License
 
