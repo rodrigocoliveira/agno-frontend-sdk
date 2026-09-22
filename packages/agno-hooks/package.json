@@ -1,6 +1,6 @@
 {
   "name": "@rodrigocoliveira/agno-hooks",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Session store and React hooks for AgentOS v3: agents, teams, workflows, HITL and frontend tools",
   "license": "MIT",
   "repository": {
