@@ -27,8 +27,11 @@ safe.
 
 - Before 1.0: `minor` for anything that changes a public signature or behavior, `patch` for
   everything else. 1.0.0 is reserved for the release that ships `agno-chat`.
-- `agno-hooks` declares `agno-api` as a **peerDependency** (`>=0.1.0`). A change in `agno-api`
-  that `agno-hooks` needs must raise that range in the same PR.
+- `agno-hooks` declares `agno-api` as a **peerDependency** with an open `>=` range. Bun resolves
+  peers against the workspace copy, so the range must always include the *current* workspace
+  version (that is why it starts at `>=0.0.0`; a `>=0.1.0` range fails `bun install` with a 404
+  until 0.1.0 exists on npm). Raise the minimum only to a version that is already published,
+  in the PR where `agno-hooks` starts depending on something new in `agno-api`.
 - Changesets' `updateInternalDependencies: patch` only rewrites a range when the new version
   falls outside it; a `>=` range never triggers that, so raise it by hand when needed.
 
