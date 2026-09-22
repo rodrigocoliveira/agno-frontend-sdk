@@ -16,7 +16,7 @@
     "check:demo-catalog": "bun run scripts/check-demo-catalog.ts",
     "test:e2e": "AGNO_URL=${AGNO_URL:-http://localhost:7777} bun test packages/agno-api/test/e2e packages/agno-hooks/test/e2e",
     "changeset": "changeset",
-    "version": "changeset version",
+    "version": "changeset version && bun install --lockfile-only",
     "release": "bun run build && changeset publish"
   },
   "devDependencies": {

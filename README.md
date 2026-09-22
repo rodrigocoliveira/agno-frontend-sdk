@@ -32,3 +32,6 @@ bun run build && bun run typecheck && bun run test          # unit
 AGNO_PORT=7778 bun run agentos                                # scripted E2E server (e2e/agentos)
 AGNO_URL=http://localhost:7778 bun run test:e2e               # E2E, no API key needed
 ```
+
+Every PR that changes a package adds a changeset (`bun run changeset`). Publishing to npm is
+automated from `main` — see [RELEASING.md](RELEASING.md).
