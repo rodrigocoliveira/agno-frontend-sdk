@@ -2,12 +2,13 @@
 #
 # On every push to main, changesets/action/select-mode decides what to do:
 #   - pending changesets  -> open/update the "chore: version packages" PR
-#   - no changesets, but package.json versions not on npm -> publish them
+#   - no changesets, but package.json versions not on npm -> stage them on npm
 #   - nothing to do       -> no-op
 #
-# Publishing authenticates with npm trusted publishing (OIDC): there is no NPM_TOKEN
-# secret anywhere. npm verifies that the request comes from this repository and this
-# workflow file, and attaches provenance to the published packages automatically.
+# Publishing is *staged*: this workflow runs `npm stage publish` through npm trusted publishing
+# (OIDC — no NPM_TOKEN secret anywhere; npm verifies the request comes from this repository and
+# this workflow file, and attaches provenance automatically). Nothing goes live until a
+# maintainer approves the staged version on npmjs.com with 2FA. See RELEASING.md.
 name: Release
 
 on:
@@ -70,19 +71,16 @@ jobs:
       contents: write   # push git tags and create GitHub releases
       id-token: write   # npm trusted publishing (OIDC)
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@v4   # credentials kept: the script pushes the release tags
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.9'
-      # `changeset publish` shells out to `npm publish`; trusted publishing needs npm >= 11.5.1,
-      # which ships with Node 24. Bun is still what installs and builds.
+      # `npm stage publish` needs npm >= 11.15 (trusted publishing needs >= 11.5.1);
+      # Node 24 ships npm 11.19+. Bun is still what installs and builds.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
       - run: bun install --frozen-lockfile
-      - uses: changesets/action/publish@v2
-        with:
-          script: bun run release   # build both packages, then `changeset publish`
-          create-github-releases: true
+      - run: bun run release:stage   # build, `npm stage publish` each new version, tag, GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
