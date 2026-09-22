@@ -1,6 +1,6 @@
 # examples/demo-agentos
 
-A real [AgentOS](https://docs.agno.com) `3.0.7` with agents, teams and workflows that exercise
+A real [AgentOS](https://docs.agno.com) `3.0.10` with agents, teams and workflows that exercise
 every feature of `@rodrigocoliveira/agno-hooks`. Pair it with [`examples/demo-react`](../demo-react).
 
 ## Run
