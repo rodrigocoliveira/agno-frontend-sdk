@@ -1,5 +1,18 @@
 # @rodrigocoliveira/agno-hooks
 
+## 1.0.0
+
+### Major Changes
+
+- 79fb5ab: First stable release. From here on the public API follows semver: a breaking change only ships in a new major version. No API changes of its own beyond the entries below.
+
+### Patch Changes
+
+- cd4584b: A tool behind a rejected `@approval` no longer reads as pending after the run continues. A rejected approval runs nothing, so no tool event reaches the stream, and a background continue's terminal event carries no `tools`: the run kept the tool exactly as it was at the pause. When a continue that skipped an approval-gated tool ends, the store now reads the run once and takes those tools from the server's copy (`confirmed: false`, `confirmation_note`).
+- Updated dependencies [21d3a05]
+- Updated dependencies [79fb5ab]
+  - @rodrigocoliveira/agno-api@1.0.0
+
 ## 0.1.0
 
 ### Minor Changes
