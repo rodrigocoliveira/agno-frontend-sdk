@@ -623,6 +623,86 @@ export interface paths {
         patch: operations["update_eval_run"];
         trace?: never;
     };
+    "/filesystem/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Filesystem Content
+         * @description Read a preview of one file, continuing from offset when the file is longer than limit.
+         */
+        get: operations["read_filesystem_content"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/filesystem/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Filesystem Entries
+         * @description List the files and directories directly under a directory of one filesystem.
+         */
+        get: operations["list_filesystem_entries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/filesystem/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Filesystem Files
+         * @description List files across the configured agent filesystems visible to the caller. Use agent_id or namespace to narrow the result, and query to search file contents.
+         */
+        get: operations["list_filesystem_files"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/filesystem/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Filesystem
+         * @description Search file contents within one filesystem.
+         */
+        get: operations["search_filesystem"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2130,6 +2210,11 @@ export interface components {
             factory_input_schema?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Filesystem
+             * @default false
+             */
+            filesystem: boolean;
             /** Id */
             id?: string | null;
             /** Input Schema */
@@ -3151,6 +3236,8 @@ export interface components {
             description?: string | null;
             /** @description Evaluations configuration */
             evals?: components["schemas"]["EvalsConfig"] | null;
+            /** @description Filesystem configuration */
+            filesystem?: components["schemas"]["FileSystemConfig"] | null;
             /**
              * Interfaces
              * @description List of available interfaces
@@ -3769,6 +3856,204 @@ export interface components {
          * @enum {string}
          */
         EvalType: "accuracy" | "agent_as_judge" | "performance" | "reliability";
+        /** FileSystemAgent */
+        FileSystemAgent: {
+            /**
+             * Access
+             * @description Agent access to this namespace. Omitted for full access; tool-specific restrictions still apply.
+             * @default full
+             * @enum {string}
+             */
+            access: "full" | "read_only";
+            /**
+             * Id
+             * @description ID of an agent using this filesystem namespace
+             */
+            id: string;
+        };
+        /** FileSystemConfig */
+        FileSystemConfig: {
+            /**
+             * Namespaces
+             * @description Filesystem namespaces with their backend details, limits, and linked agents
+             */
+            namespaces?: components["schemas"]["FileSystemNamespace"][];
+        };
+        /** FileSystemContentResponse */
+        FileSystemContentResponse: {
+            /** Agent Ids */
+            agent_ids: string[];
+            /** Content */
+            content: string;
+            /** Limit */
+            limit: number;
+            /** Line Count */
+            line_count: number;
+            /** Namespace */
+            namespace: string;
+            /** Next Offset */
+            next_offset?: number | null;
+            /** Offset */
+            offset: number;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Truncated */
+            truncated: boolean;
+            /** Updated At */
+            updated_at?: number | null;
+            /** User Id */
+            user_id?: string | null;
+            /** Version */
+            version?: number | null;
+        };
+        /** FileSystemEntry */
+        FileSystemEntry: {
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes?: number | null;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "file" | "directory";
+            /** Updated At */
+            updated_at?: number | null;
+            /** User Id */
+            user_id?: string | null;
+            /** Version */
+            version?: number | null;
+        };
+        /** FileSystemListResponse */
+        FileSystemListResponse: {
+            /** Agent Ids */
+            agent_ids: string[];
+            /** Directory */
+            directory: string;
+            /** Entries */
+            entries: components["schemas"]["FileSystemEntry"][];
+            meta: components["schemas"]["PaginationInfo"];
+            /** Namespace */
+            namespace: string;
+            usage: components["schemas"]["FileSystemUsage"];
+        };
+        /** FileSystemNamespace */
+        FileSystemNamespace: {
+            /**
+             * Agents
+             * @description Agents using this filesystem namespace and their access
+             */
+            agents: components["schemas"]["FileSystemAgent"][];
+            /**
+             * Backend Type
+             * @description Filesystem backend type
+             */
+            backend_type: string;
+            /**
+             * Db Id
+             * @description Database identifier for a database-backed filesystem
+             */
+            db_id?: string | null;
+            /**
+             * Db Schema
+             * @description Database schema containing filesystem rows
+             */
+            db_schema?: string | null;
+            /**
+             * Max File Bytes
+             * @description Maximum UTF-8 bytes per file
+             */
+            max_file_bytes: number;
+            /**
+             * Max Namespace Bytes
+             * @description Maximum bytes across the namespace
+             */
+            max_namespace_bytes: number;
+            /**
+             * Namespace
+             * @description Canonical namespace resolved for the caller; placeholders remain when identity is unavailable
+             */
+            namespace: string;
+            /**
+             * Table Name
+             * @description Database table containing filesystem rows
+             */
+            table_name?: string | null;
+            /**
+             * User Isolation
+             * @description Whether the namespace is partitioned by user identity
+             */
+            user_isolation: boolean;
+        };
+        /** FileSystemSearchEntry */
+        FileSystemSearchEntry: {
+            /** Line */
+            line?: number | null;
+            /** Match Count */
+            match_count: number;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Snippet */
+            snippet: string;
+            /** User Id */
+            user_id?: string | null;
+        };
+        /** FileSystemSearchResponse */
+        FileSystemSearchResponse: {
+            /** Agent Ids */
+            agent_ids: string[];
+            /** Directory */
+            directory: string;
+            /** Entries */
+            entries: components["schemas"]["FileSystemSearchEntry"][];
+            meta: components["schemas"]["PaginationInfo"];
+            /** Namespace */
+            namespace: string;
+            /** Query */
+            query: string;
+        };
+        /** FileSystemTableEntry */
+        FileSystemTableEntry: {
+            /** Agent Ids */
+            agent_ids: string[];
+            /** Line */
+            line?: number | null;
+            /** Match Count */
+            match_count?: number | null;
+            /** Namespace */
+            namespace: string;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Snippet */
+            snippet?: string | null;
+            /** Updated At */
+            updated_at?: number | null;
+            /** User Id */
+            user_id?: string | null;
+            /** Version */
+            version?: number | null;
+        };
+        /** FileSystemTableResponse */
+        FileSystemTableResponse: {
+            /** Entries */
+            entries: components["schemas"]["FileSystemTableEntry"][];
+            meta: components["schemas"]["PaginationInfo"];
+        };
+        /** FileSystemUsage */
+        FileSystemUsage: {
+            /** Bytes Limit */
+            bytes_limit: number;
+            /** File Count */
+            file_count: number;
+            /** Total Bytes */
+            total_bytes: number;
+        };
         /**
          * FilterFieldSchema
          * @description Schema describing a single filterable field for the frontend filter bar.
@@ -3891,6 +4176,12 @@ export interface components {
              * @default 0
              */
             team_count: number;
+            /**
+             * User Isolation
+             * @description Whether per-user data isolation is switched on for this OS instance. Read it together with `auth_mode`: under `jwt` the token names the user, so a client sends nothing extra. Under `none` or `security_key` the OS cannot tell who a request is for, so a client that wants each user to see only their own data sends that user's id as `user_id` on every request, reads included, not only on runs.
+             * @default false
+             */
+            user_isolation: boolean;
             /**
              * Workflow Count
              * @description Number of workflows registered in the OS
@@ -4765,6 +5056,11 @@ export interface components {
                 [key: string]: unknown;
             }[] | null;
             /**
+             * Cancellation Stage
+             * @description For CANCELLED runs, where the run was when it was cancelled: PENDING, EXECUTING, PAUSED. Absent means unknown.
+             */
+            cancellation_stage?: string | null;
+            /**
              * Citations
              * @description Citations from the model (e.g., from Gemini grounding/search)
              */
@@ -5584,6 +5880,11 @@ export interface components {
             audio?: {
                 [key: string]: unknown;
             }[] | null;
+            /**
+             * Cancellation Stage
+             * @description For CANCELLED runs, where the run was when it was cancelled: PENDING, EXECUTING, PAUSED. Absent means unknown.
+             */
+            cancellation_stage?: string | null;
             /**
              * Citations
              * @description Citations from the model (e.g., from Gemini grounding/search)
@@ -6747,6 +7048,11 @@ export interface components {
             audio?: {
                 [key: string]: unknown;
             }[] | null;
+            /**
+             * Cancellation Stage
+             * @description For CANCELLED runs, where the run was when it was cancelled: PENDING, EXECUTING, PAUSED. Absent means unknown.
+             */
+            cancellation_stage?: string | null;
             /**
              * Citations
              * @description Citations from the model (e.g., from Gemini grounding/search)
@@ -9750,6 +10056,322 @@ export interface operations {
                 };
             };
             /** @description Failed to update evaluation run */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalServerErrorResponse"];
+                };
+            };
+        };
+    };
+    read_filesystem_content: {
+        parameters: {
+            query: {
+                /** @description Agent holding the filesystem; alone, selects that agent's first filesystem */
+                agent_id?: string | null;
+                /** @description Characters to return */
+                limit?: number;
+                /** @description Resolved namespace of the filesystem to browse */
+                namespace?: string | null;
+                /** @description Character offset into the file */
+                offset?: number;
+                /** @description Relative file path inside the filesystem */
+                path: string;
+                /** @description User partition to browse: your own, or any user's for an admin. An admin who names none sees every partition */
+                user_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileSystemContentResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BadRequestResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthenticatedResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFoundResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalServerErrorResponse"];
+                };
+            };
+        };
+    };
+    list_filesystem_entries: {
+        parameters: {
+            query?: {
+                /** @description Agent holding the filesystem; alone, selects that agent's first filesystem */
+                agent_id?: string | null;
+                /** @description Relative directory inside the filesystem */
+                directory?: string;
+                /** @description Page size */
+                limit?: number;
+                /** @description Resolved namespace of the filesystem to browse */
+                namespace?: string | null;
+                /** @description 1-indexed page number */
+                page?: number;
+                /** @description Sort by type, size or updated_at; the default order is by path */
+                sort_by?: ("type" | "size" | "updated_at") | null;
+                /** @description Sort order (asc or desc) */
+                sort_order?: components["schemas"]["SortOrder"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileSystemListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BadRequestResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthenticatedResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFoundResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalServerErrorResponse"];
+                };
+            };
+        };
+    };
+    list_filesystem_files: {
+        parameters: {
+            query?: {
+                /** @description Filter by agent ID */
+                agent_id?: string | null;
+                /** @description Page size */
+                limit?: number;
+                /** @description Filter by resolved namespace */
+                namespace?: string | null;
+                /** @description 1-indexed page number */
+                page?: number;
+                /** @description Search file contents */
+                query?: string | null;
+                /** @description Sort by type, size or updated_at; the default order is by path */
+                sort_by?: ("type" | "size" | "updated_at") | null;
+                /** @description Sort order (asc or desc) */
+                sort_order?: components["schemas"]["SortOrder"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileSystemTableResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BadRequestResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthenticatedResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFoundResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalServerErrorResponse"];
+                };
+            };
+        };
+    };
+    search_filesystem: {
+        parameters: {
+            query: {
+                /** @description Agent holding the filesystem; alone, selects that agent's first filesystem */
+                agent_id?: string | null;
+                directory?: string;
+                /** @description Page size */
+                limit?: number;
+                /** @description Resolved namespace of the filesystem to browse */
+                namespace?: string | null;
+                /** @description 1-indexed page number */
+                page?: number;
+                query: string;
+                /** @description User partition to browse: your own, or any user's for an admin. An admin who names none sees every partition */
+                user_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileSystemSearchResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BadRequestResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnauthenticatedResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFoundResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
             500: {
                 headers: {
                     [name: string]: unknown;

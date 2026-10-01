@@ -1,10 +1,10 @@
-# Mapa da API do AgentOS v3 (agno==3.0.10)
+# Mapa da API do AgentOS v3 (agno==3.1.0)
 
 Gerado do `openapi.json` de um AgentOS real (`SqliteDb`, 1 agent, 1 team), complementado com o que o OpenAPI não expressa: o transporte SSE, o union de eventos e os payloads de HITL. É a especificação de entrada do pacote `@rodrigocoliveira/agno-api`.
 
 Legenda: **↑** = o que sobe (query, path, body); **↓** = o que desce (resposta 200). Content types diferentes de `application/json` estão marcados.
 
-Total: **89 paths, 125 operações**, em 20 grupos.
+Total: **93 paths, 129 operações**, em 21 grupos.
 
 ## Índice
 
@@ -27,6 +27,7 @@ Total: **89 paths, 125 operações**, em 20 grupos.
 - [Evals](#evals) (5)
 - [Metrics](#metrics) (3)
 - [Traces](#traces) (5)
+- [Filesystem](#filesystem) (4)
 - [Database](#database) (2)
 
 
@@ -63,6 +64,7 @@ Get OS Info. Return lightweight, unauthenticated metadata about this AgentOS ins
 | `workflow_count` | `int` | não | `0` |
 | `mcp` | `McpInfo` | não | — |
 | `auth_mode` | `"none" | "security_key" | "jwt"` | não | `"none"` |
+| `user_isolation` | `bool` | não | `false` |
 
 ### `GET /config`
 
@@ -91,6 +93,7 @@ Get OS Configuration. Retrieve the complete configuration of the AgentOS instanc
 | `teams` | `TeamSummaryResponse[]` | sim | — |
 | `workflows` | `WorkflowSummaryResponse[]` | sim | — |
 | `interfaces` | `InterfaceResponse[]` | sim | — |
+| `filesystem` | `FileSystemConfig | null` | não | — |
 
 Erros documentados: `400`, `401`, `404`, `500`
 
@@ -257,6 +260,7 @@ Get Agent Details. Retrieve detailed configuration and capabilities of a specifi
 | `is_component` | `bool` | não | `false` |
 | `current_version` | `int | null` | não | — |
 | `stage` | `string | null` | não | — |
+| `filesystem` | `bool` | não | `false` |
 
 Erros documentados: `400`, `401`, `404`, `500`
 
@@ -2937,6 +2941,130 @@ Schema: `TraceSearchRequest`
 Erros documentados: `400`, `401`, `404`, `500`
 
 
+## Filesystem
+
+### `GET /filesystem/files`
+
+List Filesystem Files. List files across the configured agent filesystems visible to the caller. Use agent_id or namespace to narrow the result, and query to search file contents.
+
+**↑ query/header**
+
+| param | in | tipo | obrig. | default |
+|---|---|---|---|---|
+| `agent_id` | query | `string | null` | não | — |
+| `namespace` | query | `string | null` | não | — |
+| `query` | query | `string | null` | não | — |
+| `sort_by` | query | `"type" | "size" | "updated_at" | null` | não | — |
+| `sort_order` | query | `SortOrder` | não | `"asc"` |
+| `page` | query | `int` | não | `1` |
+| `limit` | query | `int` | não | `50` |
+
+**↓** `FileSystemTableResponse`
+
+| campo | tipo | obrig. | default |
+|---|---|---|---|
+| `entries` | `FileSystemTableEntry[]` | sim | — |
+| `meta` | `PaginationInfo` | sim | — |
+
+Erros documentados: `400`, `401`, `404`, `422`, `500`
+
+
+### `GET /filesystem/entries`
+
+List Filesystem Entries. List the files and directories directly under a directory of one filesystem.
+
+**↑ query/header**
+
+| param | in | tipo | obrig. | default |
+|---|---|---|---|---|
+| `namespace` | query | `string | null` | não | — |
+| `agent_id` | query | `string | null` | não | — |
+| `directory` | query | `string` | não | `""` |
+| `sort_by` | query | `"type" | "size" | "updated_at" | null` | não | — |
+| `sort_order` | query | `SortOrder` | não | `"asc"` |
+| `page` | query | `int` | não | `1` |
+| `limit` | query | `int` | não | `50` |
+
+**↓** `FileSystemListResponse`
+
+| campo | tipo | obrig. | default |
+|---|---|---|---|
+| `namespace` | `string` | sim | — |
+| `agent_ids` | `string[]` | sim | — |
+| `directory` | `string` | sim | — |
+| `entries` | `FileSystemEntry[]` | sim | — |
+| `usage` | `FileSystemUsage` | sim | — |
+| `meta` | `PaginationInfo` | sim | — |
+
+Erros documentados: `400`, `401`, `404`, `422`, `500`
+
+
+### `GET /filesystem/content`
+
+Read Filesystem Content. Read a preview of one file, continuing from offset when the file is longer than limit.
+
+**↑ query/header**
+
+| param | in | tipo | obrig. | default |
+|---|---|---|---|---|
+| `namespace` | query | `string | null` | não | — |
+| `agent_id` | query | `string | null` | não | — |
+| `path` | query | `string` | sim | — |
+| `user_id` | query | `string | null` | não | — |
+| `offset` | query | `int` | não | `0` |
+| `limit` | query | `int` | não | `100000` |
+
+**↓** `FileSystemContentResponse`
+
+| campo | tipo | obrig. | default |
+|---|---|---|---|
+| `namespace` | `string` | sim | — |
+| `agent_ids` | `string[]` | sim | — |
+| `path` | `string` | sim | — |
+| `content` | `string` | sim | — |
+| `size_bytes` | `int` | sim | — |
+| `version` | `int | null` | não | — |
+| `updated_at` | `int | null` | não | — |
+| `user_id` | `string | null` | não | — |
+| `line_count` | `int` | sim | — |
+| `truncated` | `bool` | sim | — |
+| `offset` | `int` | sim | — |
+| `limit` | `int` | sim | — |
+| `next_offset` | `int | null` | não | — |
+
+Erros documentados: `400`, `401`, `404`, `422`, `500`
+
+
+### `GET /filesystem/search`
+
+Search Filesystem. Search file contents within one filesystem.
+
+**↑ query/header**
+
+| param | in | tipo | obrig. | default |
+|---|---|---|---|---|
+| `namespace` | query | `string | null` | não | — |
+| `agent_id` | query | `string | null` | não | — |
+| `query` | query | `string` | sim | — |
+| `directory` | query | `string` | não | `""` |
+| `user_id` | query | `string | null` | não | — |
+| `page` | query | `int` | não | `1` |
+| `limit` | query | `int` | não | `50` |
+
+**↓** `FileSystemSearchResponse`
+
+| campo | tipo | obrig. | default |
+|---|---|---|---|
+| `namespace` | `string` | sim | — |
+| `agent_ids` | `string[]` | sim | — |
+| `query` | `string` | sim | — |
+| `directory` | `string` | sim | — |
+| `entries` | `FileSystemSearchEntry[]` | sim | — |
+| `meta` | `PaginationInfo` | sim | — |
+
+Erros documentados: `400`, `401`, `404`, `422`, `500`
+
+
 ## Database
 
 ### `POST /databases/all/migrate`
@@ -2972,7 +3100,7 @@ Erros documentados: `400`, `401`, `404`, `500`
 
 # Contrato de wire que o OpenAPI não expressa
 
-Tudo abaixo foi lido do código instalado (`agno==3.0.6`, reconfirmado sem diffs relevantes em `3.0.7` e `3.0.10`) e confirmado com captura ao vivo no AgentOS local. É o que o gerador de tipos não consegue produzir sozinho e precisa ser escrito à mão no `agno-api`.
+Tudo abaixo foi lido do código instalado (`agno==3.0.6`, reconfirmado sem diffs relevantes em `3.0.7`, `3.0.10` e `3.1.0`) e confirmado com captura ao vivo no AgentOS local. É o que o gerador de tipos não consegue produzir sozinho e precisa ser escrito à mão no `agno-api`.
 
 ## 1. Transporte de streaming: SSE sempre
 

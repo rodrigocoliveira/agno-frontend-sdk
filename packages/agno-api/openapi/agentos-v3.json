@@ -15942,6 +15942,742 @@
      }
     }
    }
+  },
+  "/filesystem/files": {
+   "get": {
+    "tags": [
+     "FileSystem"
+    ],
+    "summary": "List Filesystem Files",
+    "description": "List files across the configured agent filesystems visible to the caller. Use agent_id or namespace to narrow the result, and query to search file contents.",
+    "operationId": "list_filesystem_files",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "agent_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Filter by agent ID",
+       "title": "Agent Id"
+      },
+      "description": "Filter by agent ID"
+     },
+     {
+      "name": "namespace",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Filter by resolved namespace",
+       "title": "Namespace"
+      },
+      "description": "Filter by resolved namespace"
+     },
+     {
+      "name": "query",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 200
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Search file contents",
+       "title": "Query"
+      },
+      "description": "Search file contents"
+     },
+     {
+      "name": "sort_by",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "enum": [
+          "type",
+          "size",
+          "updated_at"
+         ],
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Sort by type, size or updated_at; the default order is by path",
+       "title": "Sort By"
+      },
+      "description": "Sort by type, size or updated_at; the default order is by path"
+     },
+     {
+      "name": "sort_order",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "$ref": "#/components/schemas/SortOrder",
+       "description": "Sort order (asc or desc)",
+       "default": "asc"
+      },
+      "description": "Sort order (asc or desc)"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "description": "1-indexed page number",
+       "default": 1,
+       "title": "Page"
+      },
+      "description": "1-indexed page number"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 100,
+       "minimum": 1,
+       "description": "Page size",
+       "default": 50,
+       "title": "Limit"
+      },
+      "description": "Page size"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FileSystemTableResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad Request",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BadRequestResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Unauthorized",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnauthenticatedResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not Found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ValidationErrorResponse"
+        }
+       }
+      }
+     },
+     "500": {
+      "description": "Internal Server Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InternalServerErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/filesystem/entries": {
+   "get": {
+    "tags": [
+     "FileSystem"
+    ],
+    "summary": "List Filesystem Entries",
+    "description": "List the files and directories directly under a directory of one filesystem.",
+    "operationId": "list_filesystem_entries",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "namespace",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Resolved namespace of the filesystem to browse",
+       "title": "Namespace"
+      },
+      "description": "Resolved namespace of the filesystem to browse"
+     },
+     {
+      "name": "agent_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Agent holding the filesystem; alone, selects that agent's first filesystem",
+       "title": "Agent Id"
+      },
+      "description": "Agent holding the filesystem; alone, selects that agent's first filesystem"
+     },
+     {
+      "name": "directory",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Relative directory inside the filesystem",
+       "default": "",
+       "title": "Directory"
+      },
+      "description": "Relative directory inside the filesystem"
+     },
+     {
+      "name": "sort_by",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "enum": [
+          "type",
+          "size",
+          "updated_at"
+         ],
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Sort by type, size or updated_at; the default order is by path",
+       "title": "Sort By"
+      },
+      "description": "Sort by type, size or updated_at; the default order is by path"
+     },
+     {
+      "name": "sort_order",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "$ref": "#/components/schemas/SortOrder",
+       "description": "Sort order (asc or desc)",
+       "default": "asc"
+      },
+      "description": "Sort order (asc or desc)"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "description": "1-indexed page number",
+       "default": 1,
+       "title": "Page"
+      },
+      "description": "1-indexed page number"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 100,
+       "minimum": 1,
+       "description": "Page size",
+       "default": 50,
+       "title": "Limit"
+      },
+      "description": "Page size"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FileSystemListResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad Request",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BadRequestResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Unauthorized",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnauthenticatedResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not Found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ValidationErrorResponse"
+        }
+       }
+      }
+     },
+     "500": {
+      "description": "Internal Server Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InternalServerErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/filesystem/content": {
+   "get": {
+    "tags": [
+     "FileSystem"
+    ],
+    "summary": "Read Filesystem Content",
+    "description": "Read a preview of one file, continuing from offset when the file is longer than limit.",
+    "operationId": "read_filesystem_content",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "namespace",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Resolved namespace of the filesystem to browse",
+       "title": "Namespace"
+      },
+      "description": "Resolved namespace of the filesystem to browse"
+     },
+     {
+      "name": "agent_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Agent holding the filesystem; alone, selects that agent's first filesystem",
+       "title": "Agent Id"
+      },
+      "description": "Agent holding the filesystem; alone, selects that agent's first filesystem"
+     },
+     {
+      "name": "path",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "description": "Relative file path inside the filesystem",
+       "title": "Path"
+      },
+      "description": "Relative file path inside the filesystem"
+     },
+     {
+      "name": "user_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "User partition to browse: your own, or any user's for an admin. An admin who names none sees every partition",
+       "title": "User Id"
+      },
+      "description": "User partition to browse: your own, or any user's for an admin. An admin who names none sees every partition"
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "description": "Character offset into the file",
+       "default": 0,
+       "title": "Offset"
+      },
+      "description": "Character offset into the file"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 100000,
+       "minimum": 1,
+       "description": "Characters to return",
+       "default": 100000,
+       "title": "Limit"
+      },
+      "description": "Characters to return"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FileSystemContentResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad Request",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BadRequestResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Unauthorized",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnauthenticatedResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not Found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ValidationErrorResponse"
+        }
+       }
+      }
+     },
+     "500": {
+      "description": "Internal Server Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InternalServerErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/filesystem/search": {
+   "get": {
+    "tags": [
+     "FileSystem"
+    ],
+    "summary": "Search Filesystem",
+    "description": "Search file contents within one filesystem.",
+    "operationId": "search_filesystem",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "namespace",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Resolved namespace of the filesystem to browse",
+       "title": "Namespace"
+      },
+      "description": "Resolved namespace of the filesystem to browse"
+     },
+     {
+      "name": "agent_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Agent holding the filesystem; alone, selects that agent's first filesystem",
+       "title": "Agent Id"
+      },
+      "description": "Agent holding the filesystem; alone, selects that agent's first filesystem"
+     },
+     {
+      "name": "query",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 200,
+       "title": "Query"
+      }
+     },
+     {
+      "name": "directory",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Directory"
+      }
+     },
+     {
+      "name": "user_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "User partition to browse: your own, or any user's for an admin. An admin who names none sees every partition",
+       "title": "User Id"
+      },
+      "description": "User partition to browse: your own, or any user's for an admin. An admin who names none sees every partition"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "description": "1-indexed page number",
+       "default": 1,
+       "title": "Page"
+      },
+      "description": "1-indexed page number"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 100,
+       "minimum": 1,
+       "description": "Page size",
+       "default": 50,
+       "title": "Limit"
+      },
+      "description": "Page size"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/FileSystemSearchResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad Request",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BadRequestResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Unauthorized",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnauthenticatedResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not Found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ValidationErrorResponse"
+        }
+       }
+      }
+     },
+     "500": {
+      "description": "Internal Server Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InternalServerErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -16211,6 +16947,11 @@
        }
       ],
       "title": "Stage"
+     },
+     "filesystem": {
+      "type": "boolean",
+      "title": "Filesystem",
+      "default": false
      }
     },
     "type": "object",
@@ -18554,6 +19295,17 @@
       "type": "array",
       "title": "Interfaces",
       "description": "List of available interfaces"
+     },
+     "filesystem": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/FileSystemConfig"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Filesystem configuration"
      }
     },
     "type": "object",
@@ -20103,6 +20855,12 @@
       "title": "Auth Mode",
       "description": "Authentication mode enforced on the REST/WS plane of this OS instance. MCP OAuth, when enabled, is described separately under `mcp.oauth`.",
       "default": "none"
+     },
+     "user_isolation": {
+      "type": "boolean",
+      "title": "User Isolation",
+      "description": "Whether per-user data isolation is switched on for this OS instance. Read it together with `auth_mode`: under `jwt` the token names the user, so a client sends nothing extra. Under `none` or `security_key` the OS cannot tell who a request is for, so a client that wants each user to see only their own data sends that user's id as `user_id` on every request, reads included, not only on runs.",
+      "default": false
      }
     },
     "type": "object",
@@ -22296,6 +23054,18 @@
       ],
       "title": "Last Checkpoint At Message Index",
       "description": "Message index of the most recent mid-run checkpoint (checkpoint='tool-batch' runs)"
+     },
+     "cancellation_stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cancellation Stage",
+      "description": "For CANCELLED runs, where the run was when it was cancelled: PENDING, EXECUTING, PAUSED. Absent means unknown."
      }
     },
     "type": "object",
@@ -24336,6 +25106,18 @@
       ],
       "title": "Last Checkpoint At Message Index",
       "description": "Message index of the most recent mid-run checkpoint (checkpoint='tool-batch' runs)"
+     },
+     "cancellation_stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cancellation Stage",
+      "description": "For CANCELLED runs, where the run was when it was cancelled: PENDING, EXECUTING, PAUSED. Absent means unknown."
      }
     },
     "type": "object",
@@ -25955,7 +26737,7 @@
        {
         "type": "number",
         "maximum": 1.0,
-        "minimum": 0.0
+        "minimum": -1.0
        },
        {
         "type": "null"
@@ -26540,6 +27322,18 @@
       ],
       "title": "Response Audio",
       "description": "Audio response if generated"
+     },
+     "cancellation_stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cancellation Stage",
+      "description": "For CANCELLED runs, where the run was when it was cancelled: PENDING, EXECUTING, PAUSED. Absent means unknown."
      }
     },
     "type": "object",
@@ -26784,6 +27578,568 @@
     },
     "type": "object",
     "title": "WorkflowSummaryResponse"
+   },
+   "FileSystemAgent": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "ID of an agent using this filesystem namespace"
+     },
+     "access": {
+      "type": "string",
+      "enum": [
+       "full",
+       "read_only"
+      ],
+      "title": "Access",
+      "description": "Agent access to this namespace. Omitted for full access; tool-specific restrictions still apply.",
+      "default": "full"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id"
+    ],
+    "title": "FileSystemAgent"
+   },
+   "FileSystemConfig": {
+    "properties": {
+     "namespaces": {
+      "items": {
+       "$ref": "#/components/schemas/FileSystemNamespace"
+      },
+      "type": "array",
+      "title": "Namespaces",
+      "description": "Filesystem namespaces with their backend details, limits, and linked agents"
+     }
+    },
+    "type": "object",
+    "title": "FileSystemConfig"
+   },
+   "FileSystemContentResponse": {
+    "properties": {
+     "namespace": {
+      "type": "string",
+      "title": "Namespace"
+     },
+     "agent_ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Agent Ids"
+     },
+     "path": {
+      "type": "string",
+      "title": "Path"
+     },
+     "content": {
+      "type": "string",
+      "title": "Content"
+     },
+     "size_bytes": {
+      "type": "integer",
+      "title": "Size Bytes"
+     },
+     "version": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Version"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At"
+     },
+     "user_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Id"
+     },
+     "line_count": {
+      "type": "integer",
+      "title": "Line Count"
+     },
+     "truncated": {
+      "type": "boolean",
+      "title": "Truncated"
+     },
+     "offset": {
+      "type": "integer",
+      "title": "Offset"
+     },
+     "limit": {
+      "type": "integer",
+      "title": "Limit"
+     },
+     "next_offset": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Next Offset"
+     }
+    },
+    "type": "object",
+    "required": [
+     "namespace",
+     "agent_ids",
+     "path",
+     "content",
+     "size_bytes",
+     "line_count",
+     "truncated",
+     "offset",
+     "limit"
+    ],
+    "title": "FileSystemContentResponse"
+   },
+   "FileSystemEntry": {
+    "properties": {
+     "path": {
+      "type": "string",
+      "title": "Path"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "file",
+       "directory"
+      ],
+      "title": "Type"
+     },
+     "size_bytes": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Size Bytes"
+     },
+     "version": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Version"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At"
+     },
+     "user_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "path",
+     "type"
+    ],
+    "title": "FileSystemEntry"
+   },
+   "FileSystemListResponse": {
+    "properties": {
+     "namespace": {
+      "type": "string",
+      "title": "Namespace"
+     },
+     "agent_ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Agent Ids"
+     },
+     "directory": {
+      "type": "string",
+      "title": "Directory"
+     },
+     "entries": {
+      "items": {
+       "$ref": "#/components/schemas/FileSystemEntry"
+      },
+      "type": "array",
+      "title": "Entries"
+     },
+     "usage": {
+      "$ref": "#/components/schemas/FileSystemUsage"
+     },
+     "meta": {
+      "$ref": "#/components/schemas/PaginationInfo"
+     }
+    },
+    "type": "object",
+    "required": [
+     "namespace",
+     "agent_ids",
+     "directory",
+     "entries",
+     "usage",
+     "meta"
+    ],
+    "title": "FileSystemListResponse"
+   },
+   "FileSystemNamespace": {
+    "properties": {
+     "backend_type": {
+      "type": "string",
+      "title": "Backend Type",
+      "description": "Filesystem backend type"
+     },
+     "db_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Db Id",
+      "description": "Database identifier for a database-backed filesystem"
+     },
+     "db_schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Db Schema",
+      "description": "Database schema containing filesystem rows"
+     },
+     "table_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Table Name",
+      "description": "Database table containing filesystem rows"
+     },
+     "namespace": {
+      "type": "string",
+      "title": "Namespace",
+      "description": "Canonical namespace resolved for the caller; placeholders remain when identity is unavailable"
+     },
+     "user_isolation": {
+      "type": "boolean",
+      "title": "User Isolation",
+      "description": "Whether the namespace is partitioned by user identity"
+     },
+     "max_file_bytes": {
+      "type": "integer",
+      "title": "Max File Bytes",
+      "description": "Maximum UTF-8 bytes per file"
+     },
+     "max_namespace_bytes": {
+      "type": "integer",
+      "title": "Max Namespace Bytes",
+      "description": "Maximum bytes across the namespace"
+     },
+     "agents": {
+      "items": {
+       "$ref": "#/components/schemas/FileSystemAgent"
+      },
+      "type": "array",
+      "title": "Agents",
+      "description": "Agents using this filesystem namespace and their access"
+     }
+    },
+    "type": "object",
+    "required": [
+     "backend_type",
+     "namespace",
+     "user_isolation",
+     "max_file_bytes",
+     "max_namespace_bytes",
+     "agents"
+    ],
+    "title": "FileSystemNamespace"
+   },
+   "FileSystemSearchEntry": {
+    "properties": {
+     "path": {
+      "type": "string",
+      "title": "Path"
+     },
+     "size_bytes": {
+      "type": "integer",
+      "title": "Size Bytes"
+     },
+     "snippet": {
+      "type": "string",
+      "title": "Snippet"
+     },
+     "line": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Line"
+     },
+     "match_count": {
+      "type": "integer",
+      "title": "Match Count"
+     },
+     "user_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "path",
+     "size_bytes",
+     "snippet",
+     "match_count"
+    ],
+    "title": "FileSystemSearchEntry"
+   },
+   "FileSystemSearchResponse": {
+    "properties": {
+     "namespace": {
+      "type": "string",
+      "title": "Namespace"
+     },
+     "agent_ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Agent Ids"
+     },
+     "query": {
+      "type": "string",
+      "title": "Query"
+     },
+     "directory": {
+      "type": "string",
+      "title": "Directory"
+     },
+     "entries": {
+      "items": {
+       "$ref": "#/components/schemas/FileSystemSearchEntry"
+      },
+      "type": "array",
+      "title": "Entries"
+     },
+     "meta": {
+      "$ref": "#/components/schemas/PaginationInfo"
+     }
+    },
+    "type": "object",
+    "required": [
+     "namespace",
+     "agent_ids",
+     "query",
+     "directory",
+     "entries",
+     "meta"
+    ],
+    "title": "FileSystemSearchResponse"
+   },
+   "FileSystemTableEntry": {
+    "properties": {
+     "namespace": {
+      "type": "string",
+      "title": "Namespace"
+     },
+     "path": {
+      "type": "string",
+      "title": "Path"
+     },
+     "agent_ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Agent Ids"
+     },
+     "size_bytes": {
+      "type": "integer",
+      "title": "Size Bytes"
+     },
+     "version": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Version"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At"
+     },
+     "user_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Id"
+     },
+     "snippet": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Snippet"
+     },
+     "line": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Line"
+     },
+     "match_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Match Count"
+     }
+    },
+    "type": "object",
+    "required": [
+     "namespace",
+     "path",
+     "agent_ids",
+     "size_bytes"
+    ],
+    "title": "FileSystemTableEntry"
+   },
+   "FileSystemTableResponse": {
+    "properties": {
+     "entries": {
+      "items": {
+       "$ref": "#/components/schemas/FileSystemTableEntry"
+      },
+      "type": "array",
+      "title": "Entries"
+     },
+     "meta": {
+      "$ref": "#/components/schemas/PaginationInfo"
+     }
+    },
+    "type": "object",
+    "required": [
+     "entries",
+     "meta"
+    ],
+    "title": "FileSystemTableResponse"
+   },
+   "FileSystemUsage": {
+    "properties": {
+     "file_count": {
+      "type": "integer",
+      "title": "File Count"
+     },
+     "total_bytes": {
+      "type": "integer",
+      "title": "Total Bytes"
+     },
+     "bytes_limit": {
+      "type": "integer",
+      "title": "Bytes Limit"
+     }
+    },
+    "type": "object",
+    "required": [
+     "file_count",
+     "total_bytes",
+     "bytes_limit"
+    ],
+    "title": "FileSystemUsage"
    }
   },
   "securitySchemes": {

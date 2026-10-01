@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { routes } from '../src/generated/routes.gen'
 
 describe('routes manifest', () => {
-  test('has all 125 operations', () => {
-    expect(Object.keys(routes)).toHaveLength(125)
+  test('has all 129 operations', () => {
+    expect(Object.keys(routes)).toHaveLength(129)
   })
 
   test('query-only route', () => {

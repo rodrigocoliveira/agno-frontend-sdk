@@ -111,6 +111,7 @@ api.agents.runs.cancel('agent_1', 'run_1', { session_id: 's' })
 | `metrics` | `get`, `refresh`, `refreshStatus` |
 | `traces` | `list`, `get`, `search`, `filterSchema`, `sessionStats` |
 | `databases` | `migrateAll`, `migrate(dbId)` |
+| `filesystem` | `files`, `entries`, `content`, `search` — needs an agent with a `DbFileSystem` (agno 3.1+); not exercised by the test suite |
 
 For anything not in the tree (a custom route on your own deployment), `api.request` and
 `api.stream` reuse the same transport, auth, refresh and error handling:

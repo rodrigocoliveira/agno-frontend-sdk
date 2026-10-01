@@ -1,6 +1,6 @@
 # @rodrigocoliveira/agno-api
 
-Typed, stateless client for the [AgentOS v3](https://docs.agno.com) API — every one of its 125 operations, generated from the OpenAPI spec and hand-checked against the wire contract. Runs in the browser and in Node; the only runtime dependencies are `fetch`, `FormData` and `ReadableStream`.
+Typed, stateless client for the [AgentOS v3](https://docs.agno.com) API — every one of its 129 operations, generated from the OpenAPI spec and hand-checked against the wire contract. Runs in the browser and in Node; the only runtime dependencies are `fetch`, `FormData` and `ReadableStream`.
 
 Out of scope on purpose: no state, no cache, no message store, no React hooks, no retry beyond the 401 token refresh, no UI components. Those live in `@rodrigocoliveira/agno-hooks`.
 
@@ -209,6 +209,7 @@ The types in `src/generated/` are derived from the AgentOS OpenAPI spec, version
 | `metrics` | `get`, `refresh`, `refreshStatus` |
 | `traces` | `list`, `get`, `search`, `filterSchema`, `sessionStats` |
 | `databases` | `migrateAll`, `migrate(dbId)` |
+| `filesystem` | `files`, `entries`, `content`, `search` — needs an agent with a `DbFileSystem` (agno 3.1+); not exercised by the test suite |
 
 ## License
 

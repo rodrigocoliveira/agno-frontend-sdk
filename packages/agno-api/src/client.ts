@@ -5,6 +5,7 @@ import { approvals } from './routes/approvals'
 import { components } from './routes/components'
 import { databases } from './routes/databases'
 import { evals } from './routes/evals'
+import { filesystem } from './routes/filesystem'
 import { knowledge } from './routes/knowledge'
 import { learnings } from './routes/learnings'
 import { memories } from './routes/memories'
@@ -57,6 +58,7 @@ export function createAgnoApi(config: AgnoApiConfig) {
     metrics: metrics(ctx),
     traces: traces(ctx),
     databases: databases(ctx),
+    filesystem: filesystem(ctx),
     /** Any route not in the tree. Same auth, refresh and errors. Global `params` are not applied. */
     request: <T = unknown>(req: CustomRequest) => transport.request<T>(req),
     stream: <E = unknown>(req: CustomRequest) => transport.stream<E>(req),
