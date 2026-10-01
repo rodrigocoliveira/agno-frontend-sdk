@@ -36,7 +36,7 @@ uv run python tokens.py
 
 Auth is JWT (HS256) with per-user isolation: `admin` sees everything and resolves approvals;
 `user-1` and `user-2` only see their own sessions. In production you would use RS256 with a JWKS,
-see `agno.os.config.AuthorizationConfig`. Delete `tmp/demo.db` to reset all data.
+see `agno.os.authz.Authorization` (`jwks_file`, `audience`, `issuer`). Delete `tmp/demo.db` to reset all data.
 
 ## Catalog
 
