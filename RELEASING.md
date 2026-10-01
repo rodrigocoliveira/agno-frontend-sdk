@@ -37,8 +37,8 @@ to `main` (which re-runs the workflow until you approve) is harmless.
 
 ## Versioning policy
 
-- Before 1.0: `minor` for anything that changes a public signature or behavior, `patch` for
-  everything else. 1.0.0 is reserved for the release that ships `agno-chat`.
+- Semver, since 1.0.0: `major` for anything that breaks a public signature or behavior, `minor`
+  for new API (a new export, option or field), `patch` for fixes and everything else.
 - `agno-hooks` declares `agno-api` as a **peerDependency** with an open `>=` range. Bun resolves
   peers against the workspace copy, so the range must always include the *current* workspace
   version (that is why it starts at `>=0.0.0`; a `>=0.1.0` range fails `bun install` with a 404
