@@ -31,7 +31,7 @@ describe('contract: api tree ↔ OpenAPI manifest', () => {
     expect(extra).toEqual([])
   })
 
-  test('125 operations mapped', () => {
-    expect(found.size).toBe(125)
+  test('129 operations mapped', () => {
+    expect(found.size).toBe(129)
   })
 })
