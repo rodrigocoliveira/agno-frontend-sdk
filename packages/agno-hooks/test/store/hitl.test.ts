@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { confirm, provideUserFeedback } from '../../src/run/hitl'
+import { confirm, isToolPending, provideUserFeedback } from '../../src/run/hitl'
 import { createAgnoStore, type StoreOptions } from '../../src/store/store'
 import type { AnyEvent } from '../../src/types'
 import { apiWith, bodyParam, frames, json, mockFetch, openSse, until, wait } from './helpers'
@@ -162,6 +162,31 @@ describe('continue', () => {
     await store.continue([])
     expect(store.getSnapshot().runs[0]).toMatchObject({ status: 'completed', error: null })
     expect(JSON.parse(bodyParam(m.calls[2]!, 'tools')!)).toEqual([])
+  })
+
+  test('a rejected approval: once the continue ends, the gated tool is taken from the run row', async () => {
+    // A rejected approval runs nothing, so no tool event reaches the stream and the RunCompleted of a
+    // background continue carries no tools: without the row the tool would still read as pending.
+    const gated = { tool_call_id: 'c1', tool_name: 'issue_refund', tool_args: {}, requires_confirmation: true, approval_type: 'required', approval_id: 'ap1' }
+    const rejected = { ...gated, requires_confirmation: false, confirmed: false, confirmation_note: 'Tool call was rejected', tool_call_error: true }
+    const m = mockFetch((call) => call.url.endsWith('/continue') ? continued('r1')
+      : call.url.includes('/runs/r1') ? json({ run_id: 'r1', session_id: 's1', agent_id: 'a', status: 'COMPLETED', content: 'done', tools: [rejected] })
+      : pausedWith('r1', [gated]))
+    const store = agentStore(m.fetch)
+    await store.send('hi')
+    await store.continue([])
+    const tool = store.getSnapshot().runs[0]!.tools.find((t) => t.tool_call_id === 'c1')!
+    expect(tool).toMatchObject({ confirmed: false, confirmation_note: 'Tool call was rejected' })
+    expect(isToolPending(tool)).toBe(false)
+    expect(store.getSnapshot().runs[0]).toMatchObject({ status: 'completed', content: 'done' })
+  })
+
+  test('a continue with no approval-gated tool does not fetch the run row', async () => {
+    const m = mockFetch((call) => (call.url.endsWith('/continue') ? continued('r1') : pausedWith('r1', [confirmTool])))
+    const store = agentStore(m.fetch)
+    await store.send('hi')
+    await store.continue([confirm(confirmTool)])
+    expect(m.calls.map((c) => c.url).filter((u) => u.includes('/runs/r1') && !u.endsWith('/continue'))).toEqual([])
   })
 })
 

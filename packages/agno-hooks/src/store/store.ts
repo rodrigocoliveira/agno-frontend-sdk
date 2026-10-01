@@ -131,6 +131,8 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     onAccepted?: (run: RunOf<K>) => RunOf<K>
     /** `first` opens with no `last_event_index`, so it replays the run from event 0. */
     replaysFromStart?: boolean
+    /** Once the stream ends in a terminal state, re-read the approval-gated tools from the run row. */
+    refreshGatedTools?: boolean
   }
 
   /**
@@ -171,6 +173,37 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     if (isTerminal(merged.status)) resolutions.delete(id)
     commit()
     if (merged.status === 'paused') void autoRunTools(id).catch(() => {})
+  }
+
+  /**
+   * An approval-gated tool is resolved on the server (`/approvals/{id}/resolve`), so the continue sends no
+   * decision for it and `onAccepted` has nothing to merge. An approved tool still streams its own
+   * `ToolCallCompleted`, but a rejected one runs nothing: no tool event arrives and a background
+   * continue's terminal event carries no `tools`, so the tool would keep its `RunPaused` copy and read as
+   * pending forever. Once such a continue ends, take the gated tools from the run row.
+   */
+  async function refreshGatedTools(id: string, ac: AbortController): Promise<void> {
+    const owns = () => streams.get(id) === ac && !destroyed && !ac.signal.aborted
+    const run = find(id)
+    if (!owns() || !run || !isTerminal(run.status) || isLocalId(run.id)) return
+    let row: RunRowLike
+    // Best effort: without the row the run is still terminal and correct apart from the gated tools' flags.
+    try { row = await routes.get(run.id, sessionId) } catch { return }
+    const current = find(id)
+    if (!owns() || !current) return
+    const fresh = asRun(fromRow(kind, row))
+    const byId = new Map<string, ToolExecution>()
+    const index = (ts: ToolExecution[] | undefined) => { for (const t of ts ?? []) byId.set(t.tool_call_id, t) }
+    index(fresh.tools)
+    index(fresh.requirements?.map((r) => r.tool_execution).filter((t): t is ToolExecution => t != null))
+    if (fresh.kind === 'team') for (const m of fresh.members) index(m.tools)
+    const swap = (ts: ToolExecution[]) => ts.map((t) => (t.approval_type === 'required' && byId.get(t.tool_call_id)) || t)
+    const cur = asRun(current)
+    const next = (cur.kind === 'team'
+      ? { ...cur, tools: swap(cur.tools), members: cur.members.map((m) => ({ ...m, tools: swap(m.tools) })) }
+      : { ...cur, tools: swap(cur.tools) }) as RunOf<K>
+    replace(id, next)
+    commit()
   }
 
   async function startStream(runId: string, spec: StreamSpec): Promise<void> {
@@ -214,6 +247,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
         delays: options.retryDelays,
       })
       await settleFromRow(id, ac)
+      if (spec.refreshGatedTools) await refreshGatedTools(id, ac)
       // A create stream that closed before its RunStarted never gave the run a real id: nothing can
       // settle, resume or cancel it, so it must not stay `running` (that would block `send` forever).
       const after = current()
@@ -473,6 +507,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
     const run = asRun(find(p.runId)!)
     let wire: Record<string, unknown>
     let submitted: ToolExecution[] = []
+    let gated = false
     if (run.kind === 'workflow') {
       const stepDecisions = (decisions as Decision<'workflow'>[]).filter((d): d is StepRequirement => 'step_id' in d)
       const toolDecisions = (decisions as Decision<'workflow'>[]).filter((d): d is ToolExecution => 'tool_call_id' in d)
@@ -508,7 +543,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
       for (const t of pendingTools(run)) {
         const d = res.get(t.tool_call_id)
         if (d) final.push(d)
-        else if (t.approval_type === 'required') continue
+        else if (t.approval_type === 'required') { gated = true; continue }
         else throw new Error(`Tool ${t.tool_call_id} still pending`)
       }
       submitted = final
@@ -550,6 +585,7 @@ export function createAgnoStore<K extends Kind>(options: StoreOptions<K>): AgnoS
       // would keep the unanswered executions from `RunPaused`. Once the server has taken the continue, the
       // decisions we sent are the truth until it sends its own list back.
       onAccepted: submitted.length === 0 ? undefined : (r) => mergeSubmitted(r, submitted, memberOf),
+      refreshGatedTools: gated,
       onFail: (r, err) => (isAgnoApiError(err) ? { ...r, status: 'paused', error: messageOf(err) } : failRun(r, err)),
     })
   }

@@ -77,6 +77,23 @@ One case is worth calling out because the app itself might need to notice it: `s
 exhausted its 3 reconnection attempts, and the fix is `chat.resume(run.id)` — covered in
 [reconnection.md](reconnection.md).
 
+## Server checks on a run's owner
+
+Two server-side checks (agno 3.1+) can answer a `continue`, `resume` or `cancel` with an error
+even though the run exists. The hooks never trip the first one; the second lands on `run.error`
+like any other refused `continue`:
+
+- **404 when the run belongs to another component.** With auth on, AgentOS checks that the run
+  and session named in the path belong to the agent, team or workflow in the same path:
+  `POST /agents/chat/runs/{id}/cancel` on a run of the `tools` agent is a 404, even for an admin.
+  It answers 404 rather than 403 so that it doesn't reveal the run exists. A store always calls
+  the routes of its own `target`, so this only shows up when an app calls `agno-api` directly and
+  mixes ids.
+- **403 while an admin approval is pending.** A run paused on an `@approval` tool can't be
+  continued until the approval is resolved — for agents and teams, and since agno 3.1 for
+  workflows too. The store keeps the run `paused` with the 403's message on `run.error`; the same
+  `continue` succeeds once an admin resolves it (see [approvals.md](approvals.md)).
+
 ## Usage errors thrown by `send`/`continue`
 
 A handful of caller mistakes are rejected locally, before any request is made, with the exact

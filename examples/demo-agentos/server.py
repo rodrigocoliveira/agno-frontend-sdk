@@ -16,8 +16,8 @@ agent_os = AgentOS(
     teams=[support.team, research.team, field.team],
     workflows=[publish.workflow, report.workflow, nightly.workflow],
     db=db,
-    authorization=True,
-    authorization_config=auth.CONFIG,
+    authorization=auth.AUTHORIZATION,
+    user_isolation=True,
     cors_allowed_origins=[settings.WEB_ORIGIN],
 )
 app = agent_os.get_app()
@@ -27,7 +27,7 @@ app = agent_os.get_app()
 def dev_tokens() -> dict[str, str]:
     """Powers demo-react's Settings → "Quick demo login" — no terminal step needed to try the demo.
 
-    Excluded from JWT auth in auth.py's AuthorizationConfig (a token-issuing endpoint can't itself
+    Excluded from JWT auth in auth.py's Authorization (a token-issuing endpoint can't itself
     require a token). Fine for a local demo with a well-known default JWT_SECRET; never ship this
     in a real app.
     """
