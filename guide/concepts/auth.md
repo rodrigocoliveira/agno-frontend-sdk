@@ -33,6 +33,26 @@ function Root() {
 }
 ```
 
+## Server setup
+
+Since agno 3.1, AgentOS takes its auth as one `Authorization` object (`agno.os.authz`), and user
+isolation is a flag on `AgentOS` itself. The demo only verifies tokens — no managed roles, so
+AgentOS mounts no `/authz` routes and creates no role tables, and the token's `scopes` claim alone
+decides what a caller may do:
+
+```python
+# examples/demo-agentos/auth.py
+AUTHORIZATION = Authorization(
+    verification_keys=[settings.JWT_SECRET],
+    algorithm="HS256",
+    excluded_route_paths=["/dev/tokens"],
+)
+```
+
+`server.py` passes it as `AgentOS(authorization=auth.AUTHORIZATION, user_isolation=True, ...)`.
+The older `AgentOS(authorization=True, authorization_config=AuthorizationConfig(...))` still works
+in 3.1 but logs a deprecation warning.
+
 ## What the server reads from the JWT
 
 AgentOS's JWT middleware reads the user id from the `sub` claim (`user_id_claim: str = "sub"` by
@@ -77,7 +97,7 @@ token can resolve it.
 
 ## User isolation
 
-`examples/demo-agentos/auth.py` turns on `AuthorizationConfig(user_isolation=True)`: a non-admin
+`examples/demo-agentos/server.py` turns on `AgentOS(user_isolation=True)`: a non-admin
 caller's session list is filtered to sessions created under their own `sub`, and `sessions:read`
 alone can't see anyone else's. The store already sends what user isolation needs — `continue`,
 `resume` and `cancel` all include `session_id` on the wire, so the server can check it belongs to

@@ -1,9 +1,9 @@
-"""JWT setup: HS256 with a shared dev secret, per-user isolation, three token profiles."""
+"""JWT setup: HS256 with a shared dev secret and three token profiles. Per-user isolation is on in server.py."""
 
 import time
 
 import jwt
-from agno.os.config import AuthorizationConfig
+from agno.os.authz import Authorization
 
 import settings
 
@@ -11,10 +11,11 @@ THIRTY_DAYS = 30 * 24 * 60 * 60
 
 # /dev/tokens (server.py) hands out these same profile tokens over plain HTTP with no auth of its
 # own — fine for a local demo with a well-known default JWT_SECRET, never do this in a real app.
-CONFIG = AuthorizationConfig(
+# Token verification only: no managed roles, so no /authz routes and no role tables -- the token's
+# `scopes` claim alone decides what a caller may do.
+AUTHORIZATION = Authorization(
     verification_keys=[settings.JWT_SECRET],
     algorithm="HS256",
-    user_isolation=True,
     excluded_route_paths=["/dev/tokens"],
 )
 
