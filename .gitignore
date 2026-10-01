@@ -6,3 +6,4 @@ __pycache__/
 e2e/agentos/tmp/
 examples/demo-agentos/tmp/
 .env
+.claude/launch.json
